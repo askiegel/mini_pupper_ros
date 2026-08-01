@@ -24,6 +24,12 @@ from rclpy.node import Node
 
 from sensor_msgs.msg import Imu
 
+from mini_pupper_driver.imu_calibration import (
+    DEFAULT_CALIBRATION_SAMPLES,
+    DEFAULT_CALIBRATION_WARMUP_SAMPLES,
+    StationarySampleCalibrator,
+)
+
 
 GRAVITY = 9.80665
 DEG2RAD = math.pi / 180.0
@@ -35,23 +41,52 @@ class IMUNode(Node):
         self.get_logger().info("Initializing IMU interface")
 
         self.freq = self.declare_parameter('freq', 100).value
-        self.frame_id = self.declare_parameter('frame_id', 'imu_link').value
+        self.frame_id = self.declare_parameter(
+            'frame_id',
+            'imu_link',
+        ).value
+        self.calibration_warmup_samples = int(
+            self.declare_parameter(
+                'calibration_warmup_samples',
+                DEFAULT_CALIBRATION_WARMUP_SAMPLES,
+            ).value
+        )
+        self.calibration_samples = int(
+            self.declare_parameter(
+                'calibration_samples',
+                DEFAULT_CALIBRATION_SAMPLES,
+            ).value
+        )
+
+        self.calibrator = StationarySampleCalibrator(
+            dimensions=6,
+            warmup_samples=self.calibration_warmup_samples,
+            calibration_samples=self.calibration_samples,
+        )
+
+        self.get_logger().info(
+            "IMU calibration requires the robot to remain stationary: "
+            f"ignoring {self.calibration_warmup_samples} warm-up samples, "
+            f"then averaging {self.calibration_samples} samples"
+        )
 
         self.get_logger().info("Creating IMU hardware interface")
         self.esp32_interface = ESP32Interface()
         self.initialized = False
-        self.gyro_offset = [0, 0, 0]
-        self.acc_offset = [0, 0, 0]
-        self.calibration_count = 200
+        self.gyro_offset = [0.0, 0.0, 0.0]
+        self.acc_offset = [0.0, 0.0, 0.0]
 
         self.get_logger().info("Creating IMU publisher")
         self.pub = self.create_publisher(Imu, 'imu/data', 10)
-        self.timer = self.create_timer(1.0 / self.freq, self.timer_callback)
+        self.timer = self.create_timer(
+            1.0 / self.freq,
+            self.timer_callback,
+        )
 
     def read_imu(self):
         raw_data = self.esp32_interface.imu_get_data()
 
-        # Differnet direction of x-axis and y-axis
+        # Different direction of x-axis and y-axis.
         return [
             raw_data['ay'] * GRAVITY,
             raw_data['ax'] * GRAVITY,
@@ -67,27 +102,22 @@ class IMUNode(Node):
         ax, ay, az, gx, gy, gz = self.read_imu()
 
         if not self.initialized:
-            self.acc_offset[0] += ax
-            self.acc_offset[1] += ay
-            self.acc_offset[2] += az
-            self.gyro_offset[0] += gx
-            self.gyro_offset[1] += gy
-            self.gyro_offset[2] += gz
+            offsets = self.calibrator.add_sample(
+                (ax, ay, az, gx, gy, gz)
+            )
 
-            self.calibration_count -= 1
-            if self.calibration_count == 0:
-                self.acc_offset[0] /= 200
-                self.acc_offset[1] /= 200
-                self.acc_offset[2] /= 200
-                self.acc_offset[2] -= GRAVITY
-                self.gyro_offset[0] /= 200
-                self.gyro_offset[1] /= 200
-                self.gyro_offset[2] /= 200
-
-                self.initialized = True
-                self.get_logger().info("IMU calibration finished")
-            else:
+            if offsets is None:
                 return
+
+            self.acc_offset = list(offsets[:3])
+            self.acc_offset[2] -= GRAVITY
+            self.gyro_offset = list(offsets[3:])
+            self.initialized = True
+
+            self.get_logger().info(
+                "IMU calibration finished: "
+                f"gyro offsets={self.gyro_offset}"
+            )
 
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.frame_id
