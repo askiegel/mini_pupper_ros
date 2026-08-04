@@ -18,6 +18,12 @@ if(BUILD_TESTING)
     test/test_localization_launch.py
     TIMEOUT 60
   )
+
+  ament_add_pytest_test(
+    test_planning_launch
+    test/test_planning_launch.py
+    TIMEOUT 60
+  )
 endif()
 
 ament_package()
