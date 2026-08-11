@@ -126,3 +126,29 @@ def test_feature_contains_no_motion_control():
 
     for name in forbidden:
         assert name not in combined
+def test_static_layer_clears_only_robot_footprint():
+    costmap = load_params()['global_costmap']
+    costmap = costmap['global_costmap']['ros__parameters']
+    static_layer = costmap['static_layer']
+    obstacle_layer = costmap['obstacle_layer']
+    inflation_layer = costmap['inflation_layer']
+
+    assert costmap['robot_radius'] == 0.22
+    assert costmap['plugins'] == [
+        'static_layer',
+        'obstacle_layer',
+        'inflation_layer',
+    ]
+
+    assert (
+        static_layer['plugin']
+        == 'nav2_costmap_2d::StaticLayer'
+    )
+    assert static_layer['map_subscribe_transient_local'] is True
+    assert static_layer['footprint_clearing_enabled'] is True
+
+    assert obstacle_layer['enabled'] is True
+    assert obstacle_layer['scan']['marking'] is True
+    assert obstacle_layer['scan']['clearing'] is True
+    assert inflation_layer['inflation_radius'] == 0.40
+    assert inflation_layer['cost_scaling_factor'] == 3.0
