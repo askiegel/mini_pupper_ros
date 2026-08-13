@@ -126,6 +126,8 @@ def test_feature_contains_no_motion_control():
 
     for name in forbidden:
         assert name not in combined
+
+
 def test_static_layer_clears_only_robot_footprint():
     costmap = load_params()['global_costmap']
     costmap = costmap['global_costmap']['ros__parameters']
