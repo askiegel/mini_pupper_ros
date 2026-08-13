@@ -4,7 +4,7 @@ project(mini_pupper_navigation)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY launch maps param rviz
+  DIRECTORY behavior_trees launch maps param rviz
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -22,6 +22,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_planning_launch
     test/test_planning_launch.py
+    TIMEOUT 60
+  )
+
+  ament_add_pytest_test(
+    test_guarded_navigation_launch
+    test/test_guarded_navigation_launch.py
     TIMEOUT 60
   )
 endif()
