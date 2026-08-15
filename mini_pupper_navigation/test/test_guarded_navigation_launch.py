@@ -126,6 +126,53 @@ def test_costmaps_use_only_fixed_lidar():
             assert forbidden not in serialized
 
 
+def test_local_costmap_dimensions_are_integer_parameters():
+    payload = yaml.safe_load(text(PARAMS))
+    local = payload["local_costmap"][
+        "local_costmap"
+    ]["ros__parameters"]
+
+    assert local["width"] == 2
+    assert local["height"] == 2
+    assert type(local["width"]) is int
+    assert type(local["height"]) is int
+    assert type(local["resolution"]) is float
+
+
+def test_humble_through_poses_navigator_is_inert():
+    source = text(LAUNCH)
+    disabled = (
+        ROOT
+        / "behavior_trees"
+        / "mayday_disabled_navigate_through_poses.xml"
+    )
+
+    assert disabled.is_file()
+    assert (
+        '"default_nav_through_poses_bt_xml"'
+        in source
+    )
+    assert (
+        '"mayday_disabled_navigate_through_poses.xml"'
+        in source
+    )
+
+    tree = text(disabled)
+
+    assert tree.count("<AlwaysFailure") == 1
+
+    for forbidden in (
+        "ComputePathToPose",
+        "ComputePathThroughPoses",
+        "FollowPath",
+        "RecoveryNode",
+        "Spin",
+        "BackUp",
+        "ClearEntireCostmap",
+    ):
+        assert forbidden not in tree
+
+
 def test_tree_has_no_retry_or_recovery():
     source = text(TREE)
 

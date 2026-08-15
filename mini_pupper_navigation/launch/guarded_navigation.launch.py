@@ -52,6 +52,11 @@ def generate_launch_description():
         "behavior_trees",
         "mayday_guarded_navigate_to_pose.xml",
     ])
+    disabled_through_poses_tree = PathJoinSubstitution([
+        package_share,
+        "behavior_trees",
+        "mayday_disabled_navigate_through_poses.xml",
+    ])
 
     map_file = LaunchConfiguration("map")
     localization_params = LaunchConfiguration(
@@ -137,6 +142,8 @@ def generate_launch_description():
                     "use_sim_time": use_sim_time,
                     "default_nav_to_pose_bt_xml":
                         behavior_tree,
+                    "default_nav_through_poses_bt_xml":
+                        disabled_through_poses_tree,
                 },
             ],
         ),
