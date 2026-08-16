@@ -193,6 +193,19 @@ def test_tree_has_no_retry_or_recovery():
         assert marker not in source
 
 
+def test_bt_action_acknowledgement_timeout_is_bounded():
+    payload = yaml.safe_load(text(PARAMS))
+    navigator = payload["bt_navigator"][
+        "ros__parameters"
+    ]
+
+    assert navigator["default_server_timeout"] == 5000
+
+    tree = text(TREE)
+
+    assert "server_timeout" not in tree
+
+
 def test_parameters_exclude_recovery_capability():
     source = text(PARAMS)
 
