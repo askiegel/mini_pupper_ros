@@ -220,3 +220,26 @@ def test_parameters_exclude_recovery_capability():
         "PointCloud2",
     ):
         assert marker not in source
+
+def test_localization_lifecycle_precedes_guarded_navigation():
+    source = text(LAUNCH)
+
+    localization_include = source.index(
+        "IncludeLaunchDescription("
+    )
+    guarded_delay = source.index(
+        "TimerAction("
+    )
+    guarded_manager = source.index(
+        '"lifecycle_manager_guarded_navigation"',
+        guarded_delay,
+    )
+
+    assert (
+        "from launch.actions import TimerAction"
+        in source
+    )
+    assert "period=10.0" in source
+    assert localization_include < guarded_delay
+    assert guarded_delay < guarded_manager
+

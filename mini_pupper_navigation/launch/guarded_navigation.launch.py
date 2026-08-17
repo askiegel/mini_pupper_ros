@@ -18,6 +18,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import IncludeLaunchDescription
+from launch.actions import TimerAction
 from launch.launch_description_sources import (
     PythonLaunchDescriptionSource,
 )
@@ -147,21 +148,28 @@ def generate_launch_description():
                 },
             ],
         ),
-        Node(
-            package="nav2_lifecycle_manager",
-            executable="lifecycle_manager",
-            name="lifecycle_manager_guarded_navigation",
-            output="screen",
-            parameters=[{
-                "use_sim_time": use_sim_time,
-                "autostart": autostart,
-                "bond_timeout": 4.0,
-                "attempt_respawn_reconnection": False,
-                "node_names": [
-                    "planner_server",
-                    "controller_server",
-                    "bt_navigator",
-                ],
-            }],
+        TimerAction(
+            period=10.0,
+            actions=[
+                Node(
+                    package="nav2_lifecycle_manager",
+                    executable="lifecycle_manager",
+                    name=(
+                        "lifecycle_manager_guarded_navigation"
+                    ),
+                    output="screen",
+                    parameters=[{
+                        "use_sim_time": use_sim_time,
+                        "autostart": autostart,
+                        "bond_timeout": 4.0,
+                        "attempt_respawn_reconnection": False,
+                        "node_names": [
+                            "planner_server",
+                            "controller_server",
+                            "bt_navigator",
+                        ],
+                    }],
+                ),
+            ],
         ),
     ])
