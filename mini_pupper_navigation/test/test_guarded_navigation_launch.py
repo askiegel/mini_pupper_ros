@@ -81,7 +81,7 @@ def test_fixed_low_speed_limits():
         controller["progress_checker"][
             "movement_time_allowance"
         ]
-        == 5.0
+        == 12.0
     )
 
 
