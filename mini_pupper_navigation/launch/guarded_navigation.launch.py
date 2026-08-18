@@ -111,46 +111,46 @@ def generate_launch_description():
                 "initial_pose_yaw": "0.0",
             }.items(),
         ),
-        Node(
-            package="nav2_planner",
-            executable="planner_server",
-            name="planner_server",
-            output="screen",
-            parameters=[
-                navigation_params,
-                {"use_sim_time": use_sim_time},
-            ],
-        ),
-        Node(
-            package="nav2_controller",
-            executable="controller_server",
-            name="controller_server",
-            output="screen",
-            parameters=[
-                navigation_params,
-                {"use_sim_time": use_sim_time},
-            ],
-            remappings=[("cmd_vel", "/cmd_vel")],
-        ),
-        Node(
-            package="nav2_bt_navigator",
-            executable="bt_navigator",
-            name="bt_navigator",
-            output="screen",
-            parameters=[
-                navigation_params,
-                {
-                    "use_sim_time": use_sim_time,
-                    "default_nav_to_pose_bt_xml":
-                        behavior_tree,
-                    "default_nav_through_poses_bt_xml":
-                        disabled_through_poses_tree,
-                },
-            ],
-        ),
         TimerAction(
             period=10.0,
             actions=[
+                Node(
+                    package="nav2_planner",
+                    executable="planner_server",
+                    name="planner_server",
+                    output="screen",
+                    parameters=[
+                        navigation_params,
+                        {"use_sim_time": use_sim_time},
+                    ],
+                ),
+                Node(
+                    package="nav2_controller",
+                    executable="controller_server",
+                    name="controller_server",
+                    output="screen",
+                    parameters=[
+                        navigation_params,
+                        {"use_sim_time": use_sim_time},
+                    ],
+                    remappings=[("cmd_vel", "/cmd_vel")],
+                ),
+                Node(
+                    package="nav2_bt_navigator",
+                    executable="bt_navigator",
+                    name="bt_navigator",
+                    output="screen",
+                    parameters=[
+                        navigation_params,
+                        {
+                            "use_sim_time": use_sim_time,
+                            "default_nav_to_pose_bt_xml":
+                                behavior_tree,
+                            "default_nav_through_poses_bt_xml":
+                                disabled_through_poses_tree,
+                        },
+                    ],
+                ),
                 Node(
                     package="nav2_lifecycle_manager",
                     executable="lifecycle_manager",

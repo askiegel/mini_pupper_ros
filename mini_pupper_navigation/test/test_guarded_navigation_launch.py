@@ -230,6 +230,18 @@ def test_localization_lifecycle_precedes_guarded_navigation():
     guarded_delay = source.index(
         "TimerAction("
     )
+    planner = source.index(
+        'executable="planner_server"',
+        guarded_delay,
+    )
+    controller = source.index(
+        'executable="controller_server"',
+        guarded_delay,
+    )
+    navigator = source.index(
+        'executable="bt_navigator"',
+        guarded_delay,
+    )
     guarded_manager = source.index(
         '"lifecycle_manager_guarded_navigation"',
         guarded_delay,
@@ -241,5 +253,10 @@ def test_localization_lifecycle_precedes_guarded_navigation():
     )
     assert "period=10.0" in source
     assert localization_include < guarded_delay
-    assert guarded_delay < guarded_manager
+    assert guarded_delay < planner
+    assert guarded_delay < controller
+    assert guarded_delay < navigator
+    assert planner < guarded_manager
+    assert controller < guarded_manager
+    assert navigator < guarded_manager
 
