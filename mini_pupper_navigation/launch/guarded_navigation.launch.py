@@ -25,6 +25,7 @@ from launch.launch_description_sources import (
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.actions import SetRemap
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -96,6 +97,21 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "autostart",
             default_value="true",
+        ),
+        Node(
+            package="mini_pupper_navigation",
+            executable="latest_tf_relay.py",
+            name="latest_tf_relay",
+            output="screen",
+            parameters=[{
+                "input_topic": "/tf",
+                "output_topic": "/nav_tf",
+                "publish_frequency": 10.0,
+            }],
+        ),
+        SetRemap(
+            src="/tf",
+            dst="/nav_tf",
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(

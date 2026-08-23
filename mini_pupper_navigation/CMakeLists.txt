@@ -4,6 +4,11 @@ project(mini_pupper_navigation)
 find_package(ament_cmake REQUIRED)
 
 install(
+  PROGRAMS scripts/latest_tf_relay.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
   DIRECTORY behavior_trees launch maps param rviz
   DESTINATION share/${PROJECT_NAME}
 )
