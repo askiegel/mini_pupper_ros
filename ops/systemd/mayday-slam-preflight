@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if ! systemctl is-active --quiet mayday-bringup.service; then
+    echo "FAIL: mayday-bringup.service is not active."
+    echo "SLAM requires the protected Mayday bringup."
+    exit 41
+fi
+
+declare -a patterns=(
+    '/opt/ros/humble/bin/ros2 launch mini_pupper_slam slam.launch.py'
+    '/cartographer_ros/cartographer_node'
+    '/cartographer_ros/cartographer_occupancy_grid_node'
+)
+
+declare -A found=()
+
+for pattern in "${patterns[@]}"; do
+    while read -r pid; do
+        [[ -n "$pid" ]] || continue
+        found["$pid"]=1
+    done < <(pgrep -f -- "$pattern" || true)
+done
+
+if ((${#found[@]} > 0)); then
+    echo "FAIL: SLAM-owned processes already exist."
+    echo "Refusing to start a second Cartographer tree."
+    echo
+    echo "Existing processes:"
+
+    mapfile -t pids < <(
+        printf '%s\n' "${!found[@]}" |
+        sort -n
+    )
+
+    ps \
+        -o pid,ppid,pgid,sid,stat,etime,cmd \
+        -p "$(IFS=,; echo "${pids[*]}")" \
+        || true
+
+    exit 40
+fi
+
+echo "PASS: protected bringup is active."
+echo "PASS: no existing SLAM-owned processes detected."
