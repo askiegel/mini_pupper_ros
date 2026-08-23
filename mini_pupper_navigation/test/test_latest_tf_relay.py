@@ -65,8 +65,28 @@ def test_latest_tf_relay_uses_non_backlogging_input():
     )
 
     assert (
-        "self._dirty.clear()"
+        "self._pending.append("
         in source
+    )
+
+    assert (
+        "transforms = self._pending"
+        in source
+    )
+
+    assert (
+        "self._pending = []"
+        in source
+    )
+
+    assert (
+        "self._latest_stamp_ns"
+        in source
+    )
+
+    assert (
+        "self._dirty.clear()"
+        not in source
     )
 
 

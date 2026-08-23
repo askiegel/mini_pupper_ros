@@ -35,6 +35,12 @@ if(BUILD_TESTING)
     test/test_guarded_navigation_launch.py
     TIMEOUT 60
   )
+
+  ament_add_pytest_test(
+    test_latest_tf_relay
+    test/test_latest_tf_relay.py
+    TIMEOUT 60
+  )
 endif()
 
 ament_package()

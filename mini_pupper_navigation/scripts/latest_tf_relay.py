@@ -39,9 +39,13 @@ class LatestTfRelay(Node):
         RELIABLE
         KEEP_LAST depth 1
 
-    Only frame pairs updated since the preceding relay
-    publication are emitted. Historical TF is never
-    intentionally replayed.
+    All accepted transforms received since the preceding
+    relay publication are emitted together. This preserves
+    recent timestamp history for delayed sensor messages
+    while bounding the DDS publication rate.
+
+    Out-of-order transforms for an individual frame pair
+    are rejected.
     """
 
     def __init__(self):
@@ -100,8 +104,8 @@ class LatestTfRelay(Node):
         )
 
         self._lock = threading.Lock()
-        self._latest = {}
-        self._dirty = set()
+        self._latest_stamp_ns = {}
+        self._pending = []
 
         self._publisher = self.create_publisher(
             TFMessage,
@@ -135,36 +139,33 @@ class LatestTfRelay(Node):
                     transform.child_frame_id,
                 )
 
-                previous = self._latest.get(key)
-
-                if (
-                    previous is not None
-                    and stamp_nanoseconds(transform)
-                    < stamp_nanoseconds(previous)
-                ):
-                    continue
-
-                self._latest[key] = copy.deepcopy(
+                stamp_ns = stamp_nanoseconds(
                     transform
                 )
 
-                self._dirty.add(key)
+                previous_stamp_ns = (
+                    self._latest_stamp_ns.get(key)
+                )
+
+                if (
+                    previous_stamp_ns is not None
+                    and stamp_ns < previous_stamp_ns
+                ):
+                    continue
+
+                self._latest_stamp_ns[key] = stamp_ns
+
+                self._pending.append(
+                    copy.deepcopy(transform)
+                )
 
     def _publish_latest(self):
         with self._lock:
-            if not self._dirty:
+            if not self._pending:
                 return
 
-            keys = sorted(self._dirty)
-
-            transforms = [
-                copy.deepcopy(
-                    self._latest[key]
-                )
-                for key in keys
-            ]
-
-            self._dirty.clear()
+            transforms = self._pending
+            self._pending = []
 
         message = TFMessage()
         message.transforms = transforms
