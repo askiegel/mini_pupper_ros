@@ -47,6 +47,12 @@ if(BUILD_TESTING)
     test/test_guarded_navigation_transform_tolerance.py
     TIMEOUT 60
   )
+
+  ament_add_pytest_test(
+    test_guarded_navigation_controller_transform_tolerance
+    test/test_guarded_navigation_controller_transform_tolerance.py
+    TIMEOUT 60
+  )
 endif()
 
 ament_package()
