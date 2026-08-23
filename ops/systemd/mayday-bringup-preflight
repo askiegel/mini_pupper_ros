@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+declare -a patterns=(
+    '/opt/ros/humble/bin/ros2 launch mini_pupper_bringup bringup.launch.py'
+    '/robot_state_publisher/robot_state_publisher'
+    '/champ_base/quadruped_controller_node'
+    '/champ_base/state_estimation_node'
+    '/robot_localization/ekf_node'
+    '/mini_pupper_driver/servo_interface'
+    '/ldlidar_stl_ros2/ldlidar_stl_ros2_node'
+    '/mini_pupper_driver/imu_interface'
+    '/v4l2_camera/v4l2_camera_node'
+)
+
+declare -A found=()
+
+for pattern in "${patterns[@]}"; do
+    while read -r pid; do
+        [[ -n "$pid" ]] || continue
+        found["$pid"]=1
+    done < <(pgrep -f -- "$pattern" || true)
+done
+
+if ((${#found[@]} > 0)); then
+    echo "FAIL: bringup-owned processes already exist."
+    echo "Refusing to start a second Mini Pupper bringup tree."
+    echo
+    echo "Existing processes:"
+
+    mapfile -t pids < <(
+        printf '%s\n' "${!found[@]}" |
+        sort -n
+    )
+
+    ps -o pid,ppid,pgid,sid,stat,etime,cmd -p "$(IFS=,; echo "${pids[*]}")" || true
+
+    exit 40
+fi
+
+echo "PASS: no existing bringup-owned processes detected."

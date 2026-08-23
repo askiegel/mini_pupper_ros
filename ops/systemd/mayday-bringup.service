@@ -1,0 +1,35 @@
+[Unit]
+Description=Mayday ROS 2 hardware bringup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/ros2_ws
+Environment=HOME=/home/ubuntu
+
+Environment=ROS_DOMAIN_ID=42
+Environment=ROS_LOCALHOST_ONLY=0
+Environment=RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+Environment=FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+
+UnsetEnvironment=ROS_DISCOVERY_SERVER
+UnsetEnvironment=ROS_SUPER_CLIENT
+UnsetEnvironment=FASTRTPS_DEFAULT_PROFILES_FILE
+UnsetEnvironment=FASTDDS_DEFAULT_PROFILES_FILE
+
+ExecStartPre=/usr/local/libexec/mayday-bringup-preflight
+ExecStart=/usr/bin/bash -c 'source /opt/ros/humble/setup.bash; source /home/ubuntu/ros2_ws/install/setup.bash; exec ros2 launch mini_pupper_bringup bringup.launch.py'
+
+KillMode=control-group
+KillSignal=SIGINT
+TimeoutStopSec=20
+SendSIGKILL=yes
+
+# A hardware bringup failure should remain visible rather than
+# automatically reinitializing the robot.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
