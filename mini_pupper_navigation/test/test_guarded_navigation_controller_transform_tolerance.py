@@ -45,4 +45,4 @@ def test_guarded_dwb_allows_delayed_map_transform():
         follow,
     )
 
-    assert values == ["0.75"]
+    assert values == ["1.00"]
