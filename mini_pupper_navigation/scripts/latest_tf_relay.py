@@ -16,6 +16,15 @@ from rclpy.qos import (
 from tf2_msgs.msg import TFMessage
 
 
+NAVIGATION_FRAME_PAIRS = frozenset(
+    {
+        ("map", "odom"),
+        ("odom", "base_footprint"),
+        ("base_footprint", "base_link"),
+    }
+)
+
+
 def stamp_nanoseconds(transform):
     stamp = transform.header.stamp
 
@@ -40,10 +49,16 @@ class LatestTfRelay(Node):
         RELIABLE
         KEEP_LAST depth 1
 
+    Only the dynamic frame pairs required by guarded Nav2
+    are relayed: map -> odom, odom -> base_footprint, and
+    base_footprint -> base_link. Articulated leg transforms
+    remain on the source /tf tree and are not duplicated.
+
     A bounded recent history is retained independently for
-    each frame pair. This preserves same-pair timestamps for
-    delayed sensor messages without allowing a stalled relay
-    publication to grow an unbounded outgoing TF batch.
+    each navigation frame pair. This preserves same-pair
+    timestamps for delayed sensor messages without allowing
+    a stalled relay publication to grow an unbounded outgoing
+    TF batch.
 
     Out-of-order transforms for an individual frame pair
     are rejected.
@@ -158,6 +173,9 @@ class LatestTfRelay(Node):
                     transform.header.frame_id,
                     transform.child_frame_id,
                 )
+
+                if key not in NAVIGATION_FRAME_PAIRS:
+                    continue
 
                 stamp_ns = stamp_nanoseconds(
                     transform

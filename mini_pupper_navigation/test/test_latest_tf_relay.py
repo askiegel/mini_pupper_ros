@@ -219,6 +219,110 @@ def test_latest_tf_relay_bounds_same_pair_history():
     assert published_stamps == expected
 
 
+def test_latest_tf_relay_filters_navigation_chain():
+    module = load_relay_module()
+
+    expected_pairs = {
+        ("map", "odom"),
+        ("odom", "base_footprint"),
+        ("base_footprint", "base_link"),
+    }
+
+    assert (
+        module.NAVIGATION_FRAME_PAIRS
+        == expected_pairs
+    )
+
+    class RelayHarness:
+        pass
+
+    relay = RelayHarness()
+
+    relay._lock = threading.Lock()
+    relay._history_depth_per_pair = 8
+    relay._latest_stamp_ns = {}
+    relay._pending = {}
+
+    message = TFMessage()
+
+    message.transforms = [
+        make_transform(
+            "map",
+            "odom",
+            1,
+        ),
+        make_transform(
+            "odom",
+            "base_footprint",
+            2,
+        ),
+        make_transform(
+            "base_footprint",
+            "base_link",
+            3,
+        ),
+        make_transform(
+            "base_link",
+            "lf1",
+            4,
+        ),
+        make_transform(
+            "lf1",
+            "lf2",
+            5,
+        ),
+    ]
+
+    module.LatestTfRelay._receive(
+        relay,
+        message,
+    )
+
+    assert set(relay._pending) == expected_pairs
+    assert (
+        set(relay._latest_stamp_ns)
+        == expected_pairs
+    )
+
+    assert (
+        ("base_link", "lf1")
+        not in relay._pending
+    )
+
+    assert (
+        ("lf1", "lf2")
+        not in relay._pending
+    )
+
+
+def test_latest_tf_relay_filter_is_explicit():
+    source = (
+        PACKAGE
+        / "scripts"
+        / "latest_tf_relay.py"
+    ).read_text()
+
+    assert (
+        '("map", "odom")'
+        in source
+    )
+
+    assert (
+        '("odom", "base_footprint")'
+        in source
+    )
+
+    assert (
+        '("base_footprint", "base_link")'
+        in source
+    )
+
+    assert (
+        "if key not in NAVIGATION_FRAME_PAIRS:"
+        in source
+    )
+
+
 def test_latest_tf_relay_is_installed():
     source = (
         PACKAGE
