@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from collections import deque
 import copy
 import threading
 
@@ -39,10 +40,10 @@ class LatestTfRelay(Node):
         RELIABLE
         KEEP_LAST depth 1
 
-    All accepted transforms received since the preceding
-    relay publication are emitted together. This preserves
-    recent timestamp history for delayed sensor messages
-    while bounding the DDS publication rate.
+    A bounded recent history is retained independently for
+    each frame pair. This preserves same-pair timestamps for
+    delayed sensor messages without allowing a stalled relay
+    publication to grow an unbounded outgoing TF batch.
 
     Out-of-order transforms for an individual frame pair
     are rejected.
@@ -66,6 +67,11 @@ class LatestTfRelay(Node):
             10.0,
         )
 
+        self.declare_parameter(
+            "history_depth_per_pair",
+            8,
+        )
+
         input_topic = str(
             self.get_parameter(
                 "input_topic"
@@ -84,9 +90,20 @@ class LatestTfRelay(Node):
             ).value
         )
 
+        history_depth_per_pair = int(
+            self.get_parameter(
+                "history_depth_per_pair"
+            ).value
+        )
+
         if frequency <= 0.0:
             raise ValueError(
                 "publish_frequency must be positive"
+            )
+
+        if history_depth_per_pair <= 0:
+            raise ValueError(
+                "history_depth_per_pair must be positive"
             )
 
         input_qos = QoSProfile(
@@ -104,8 +121,11 @@ class LatestTfRelay(Node):
         )
 
         self._lock = threading.Lock()
+        self._history_depth_per_pair = (
+            history_depth_per_pair
+        )
         self._latest_stamp_ns = {}
-        self._pending = []
+        self._pending = {}
 
         self._publisher = self.create_publisher(
             TFMessage,
@@ -155,7 +175,16 @@ class LatestTfRelay(Node):
 
                 self._latest_stamp_ns[key] = stamp_ns
 
-                self._pending.append(
+                history = self._pending.get(key)
+
+                if history is None:
+                    history = deque(
+                        maxlen=self._history_depth_per_pair
+                    )
+
+                    self._pending[key] = history
+
+                history.append(
                     copy.deepcopy(transform)
                 )
 
@@ -164,8 +193,13 @@ class LatestTfRelay(Node):
             if not self._pending:
                 return
 
-            transforms = self._pending
-            self._pending = []
+            pending = self._pending
+            self._pending = {}
+
+        transforms = []
+
+        for key in sorted(pending):
+            transforms.extend(pending[key])
 
         message = TFMessage()
         message.transforms = transforms
