@@ -2,6 +2,28 @@ cmake_minimum_required(VERSION 3.5)
 project(mini_pupper_navigation)
 
 find_package(ament_cmake REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(tf2_msgs REQUIRED)
+
+add_executable(
+  odometry_nav_tf_relay
+  src/odometry_nav_tf_relay.cpp
+)
+
+ament_target_dependencies(
+  odometry_nav_tf_relay
+  geometry_msgs
+  nav_msgs
+  rclcpp
+  tf2_msgs
+)
+
+install(
+  TARGETS odometry_nav_tf_relay
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 install(
   PROGRAMS scripts/latest_tf_relay.py
@@ -39,6 +61,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_latest_tf_relay
     test/test_latest_tf_relay.py
+    TIMEOUT 60
+  )
+
+  ament_add_pytest_test(
+    test_odometry_nav_tf_relay
+    test/test_odometry_nav_tf_relay.py
     TIMEOUT 60
   )
 

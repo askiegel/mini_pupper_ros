@@ -100,14 +100,9 @@ def generate_launch_description():
         ),
         Node(
             package="mini_pupper_navigation",
-            executable="latest_tf_relay.py",
-            name="latest_tf_relay",
+            executable="odometry_nav_tf_relay",
+            name="guarded_navigation_tf_relay",
             output="screen",
-            parameters=[{
-                "input_topic": "/tf",
-                "output_topic": "/nav_tf",
-                "publish_frequency": 10.0,
-            }],
         ),
         SetRemap(
             src="/tf",

@@ -41,7 +41,7 @@ def make_transform(parent, child, nanosec):
     return transform
 
 
-def test_guarded_runtime_coalesces_dynamic_tf():
+def test_guarded_runtime_uses_odometry_tf_relay():
     source = (
         PACKAGE
         / "launch"
@@ -49,6 +49,10 @@ def test_guarded_runtime_coalesces_dynamic_tf():
     ).read_text()
 
     relay = (
+        'executable="odometry_nav_tf_relay"'
+    )
+
+    legacy_relay = (
         'executable="latest_tf_relay.py"'
     )
 
@@ -66,15 +70,12 @@ def test_guarded_runtime_coalesces_dynamic_tf():
     )
 
     assert relay in source
+    assert legacy_relay not in source
     assert remap in source
     assert localization in source
 
     assert source.index(relay) < source.index(remap)
     assert source.index(remap) < source.index(localization)
-
-    assert '"input_topic": "/tf"' in source
-    assert '"output_topic": "/nav_tf"' in source
-    assert '"publish_frequency": 10.0' in source
 
 
 def test_latest_tf_relay_uses_non_backlogging_input():
