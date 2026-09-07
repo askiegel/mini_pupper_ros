@@ -21,6 +21,7 @@ UnsetEnvironment=FASTDDS_DEFAULT_PROFILES_FILE
 
 ExecStartPre=/usr/local/libexec/mayday-bringup-preflight
 ExecStart=/usr/bin/bash -c 'source /opt/ros/humble/setup.bash; source /home/ubuntu/ros2_ws/install/setup.bash; exec ros2 launch mini_pupper_bringup bringup.launch.py'
+ExecStartPost=+/usr/local/libexec/mayday-bringup-priority
 
 KillMode=control-group
 KillSignal=SIGINT

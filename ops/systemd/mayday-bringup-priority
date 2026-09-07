@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly SERVICE_CGROUP="/system.slice/mayday-bringup.service"
+readonly TARGET_NICE="-10"
+readonly WAIT_SECONDS="30"
+
+readonly CHAMP_PATTERN="/champ_base/quadruped_controller_node"
+readonly SERVO_PATTERN="/mini_pupper_driver/servo_interface"
+
+find_single_target()
+{
+    local pattern="$1"
+    local label="$2"
+
+    local -a matches=()
+    local pid=""
+
+    while read -r pid
+    do
+        [[ -n "$pid" ]] || continue
+        [[ -r "/proc/$pid/cgroup" ]] || continue
+
+        if grep -Fxq \
+            "0::${SERVICE_CGROUP}" \
+            "/proc/$pid/cgroup"
+        then
+            matches+=("$pid")
+        fi
+    done < <(
+        pgrep -f -- "$pattern" || true
+    )
+
+    if ((${#matches[@]} == 0)); then
+        return 1
+    fi
+
+    if ((${#matches[@]} != 1)); then
+        echo \
+            "FAIL: expected exactly one ${label} process in ${SERVICE_CGROUP}; found ${#matches[@]}." \
+            >&2
+
+        ps -o \
+            pid,ppid,user,ni,comm,args \
+            -p "$(IFS=,; echo "${matches[*]}")" \
+            >&2 \
+            || true
+
+        return 2
+    fi
+
+    printf '%s\n' "${matches[0]}"
+}
+
+champ_pid=""
+servo_pid=""
+
+deadline=$((SECONDS + WAIT_SECONDS))
+
+while ((SECONDS < deadline))
+do
+    champ_pid="$(
+        find_single_target \
+            "$CHAMP_PATTERN" \
+            "quadruped controller" \
+            || true
+    )"
+
+    servo_pid="$(
+        find_single_target \
+            "$SERVO_PATTERN" \
+            "servo interface" \
+            || true
+    )"
+
+    if [[ -n "$champ_pid" && -n "$servo_pid" ]]; then
+        break
+    fi
+
+    sleep 0.25
+done
+
+if [[ -z "$champ_pid" ]]; then
+    echo \
+        "FAIL: quadruped_controller_node did not appear within ${WAIT_SECONDS}s." \
+        >&2
+    exit 41
+fi
+
+if [[ -z "$servo_pid" ]]; then
+    echo \
+        "FAIL: servo_interface did not appear within ${WAIT_SECONDS}s." \
+        >&2
+    exit 42
+fi
+
+echo "Locomotion priority targets:"
+echo "  quadruped_controller_node PID=${champ_pid}"
+echo "  servo_interface           PID=${servo_pid}"
+
+renice \
+    -n "$TARGET_NICE" \
+    -p "$champ_pid"
+
+renice \
+    -n "$TARGET_NICE" \
+    -p "$servo_pid"
+
+champ_nice="$(
+    ps -o ni= \
+        -p "$champ_pid" \
+        | tr -d ' '
+)"
+
+servo_nice="$(
+    ps -o ni= \
+        -p "$servo_pid" \
+        | tr -d ' '
+)"
+
+if [[ "$champ_nice" != "$TARGET_NICE" ]]; then
+    echo \
+        "FAIL: quadruped_controller_node nice=${champ_nice}; expected ${TARGET_NICE}." \
+        >&2
+    exit 43
+fi
+
+if [[ "$servo_nice" != "$TARGET_NICE" ]]; then
+    echo \
+        "FAIL: servo_interface nice=${servo_nice}; expected ${TARGET_NICE}." \
+        >&2
+    exit 44
+fi
+
+echo \
+    "PASS: locomotion priority applied: CHAMP=${champ_nice}, servo=${servo_nice}."
