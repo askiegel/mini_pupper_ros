@@ -15,6 +15,12 @@ setup(
             "share/" + package_name,
             ["package.xml"],
         ),
+        (
+            'share/' + package_name + '/systemd',
+            [
+                "systemd/mayday-stanford-locomotion.service",
+            ],
+        ),
     ],
     install_requires=[
         "setuptools",
@@ -27,6 +33,9 @@ setup(
         "StanfordQuadruped locomotion."
     ),
     license="MIT",
+    scripts=[
+        "scripts/mayday_stanford_owner",
+    ],
     entry_points={
         "console_scripts": [
             (

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import signal
 import os
 import sys
 import time
@@ -9,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
@@ -505,8 +507,28 @@ def main(
     args=None,
 ):
 
+    #
+    # Do not let rclpy invalidate the ROS context as soon
+    # as SIGINT arrives. Python's normal SIGINT handling
+    # raises KeyboardInterrupt, allowing safe_rest() to run
+    # while publishers and the ROS context are still valid.
+    #
     rclpy.init(
-        args=args
+        args=args,
+        signal_handler_options=(
+            SignalHandlerOptions.NO
+        ),
+    )
+
+    #
+    # Background shell jobs may inherit SIGINT as ignored.
+    # Explicitly install Python's normal SIGINT handler so
+    # kill -INT and systemd KillSignal=SIGINT produce
+    # KeyboardInterrupt without invalidating the ROS context.
+    #
+    signal.signal(
+        signal.SIGINT,
+        signal.default_int_handler,
     )
 
     node = None

@@ -1,0 +1,635 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+WS="${MAYDAY_ROS_WS:-$HOME/ros2_ws}"
+
+PKG="mini_pupper_stanford"
+
+PREFIX="$WS/install/$PKG"
+
+ADAPTER="$PREFIX/lib/$PKG/stanford_cmd_vel"
+
+ROBOT_BRIDGE_URL="${MAYDAY_ROBOT_BRIDGE_URL:-http://127.0.0.1:8090}"
+
+DRY_RUN="${MAYDAY_STANFORD_OWNER_DRY_RUN:-0}"
+
+COMMAND_TIMEOUT="${MAYDAY_STANFORD_COMMAND_TIMEOUT:-0.40}"
+
+MAX_LINEAR_X="${MAYDAY_STANFORD_MAX_LINEAR_X:-0.15}"
+
+MAX_ANGULAR_Z="${MAYDAY_STANFORD_MAX_ANGULAR_Z:-0.20}"
+
+
+SERVO_PATTERN='/mini_pupper_driver/lib/mini_pupper_driver/servo_interface'
+
+CHAMP_PATTERN='/champ_base/quadruped_controller_node'
+
+ADAPTER_PATTERN='/mini_pupper_stanford/lib/mini_pupper_stanford/stanford_cmd_vel'
+
+
+SERVO_PID=""
+CHAMP_PID=""
+ADAPTER_PID=""
+
+RESTORED=0
+STOP_REQUESTED=0
+
+
+log()
+{
+    printf '%s\n' \
+        "[mayday-stanford-owner] $*"
+}
+
+
+fail()
+{
+    log "FAIL: $*"
+    exit 1
+}
+
+
+process_state()
+{
+    local pid="$1"
+
+    awk '
+        /^State:/ {
+            print
+        }
+    ' "/proc/$pid/status"
+}
+
+
+require_unfrozen()
+{
+    local pid="$1"
+    local label="$2"
+
+    local state
+
+    state="$(
+        process_state "$pid"
+    )"
+
+    log "$label PID $pid: $state"
+
+    if printf '%s\n' "$state" \
+        | grep -Eq \
+            'T \(stopped\)|t \(tracing stop\)'
+    then
+        fail "$label is unexpectedly stopped."
+    fi
+}
+
+
+require_frozen()
+{
+    local pid="$1"
+    local label="$2"
+
+    local state
+
+    state="$(
+        process_state "$pid"
+    )"
+
+    log "$label PID $pid: $state"
+
+    printf '%s\n' "$state" \
+        | grep -Eq \
+            'T \(stopped\)|t \(tracing stop\)' \
+        || fail "$label did not enter stopped state."
+}
+
+
+find_exactly_one()
+{
+    local pattern="$1"
+    local label="$2"
+
+    local -a pids=()
+
+    mapfile -t pids < <(
+        pgrep -f "$pattern" \
+        || true
+    )
+
+    if [ "${#pids[@]}" -ne 1 ]; then
+
+        log "$label matches: ${#pids[@]}"
+
+        pgrep -af "$pattern" \
+            || true
+
+        fail "expected exactly one $label process."
+    fi
+
+    printf '%s\n' "${pids[0]}"
+}
+
+
+bridge_stop()
+{
+    curl -fsS \
+        --connect-timeout 2 \
+        --max-time 5 \
+        -X POST \
+        "$ROBOT_BRIDGE_URL/stop" \
+        >/dev/null
+}
+
+
+restore()
+{
+    if [ "$RESTORED" = "1" ]; then
+        return
+    fi
+
+    RESTORED=1
+
+    set +e
+
+    log "restoring normal Mayday actuator ownership"
+
+
+    #
+    # 1. Stop any Robot Bridge stream while Stanford
+    # still has hardware ownership.
+    #
+
+    bridge_stop \
+        >/dev/null 2>&1 || true
+
+    sleep 0.55
+
+
+    #
+    # 2. Stop Stanford adapter.
+    #
+
+    if [ -n "$ADAPTER_PID" ] \
+       && kill -0 "$ADAPTER_PID" \
+            >/dev/null 2>&1
+    then
+
+        log "SIGINT Stanford adapter PID $ADAPTER_PID"
+
+        kill -INT "$ADAPTER_PID" \
+            >/dev/null 2>&1 || true
+
+
+        for _ in $(seq 1 40)
+        do
+            if ! kill -0 "$ADAPTER_PID" \
+                >/dev/null 2>&1
+            then
+                break
+            fi
+
+            sleep 0.1
+        done
+    fi
+
+
+    if [ -n "$ADAPTER_PID" ] \
+       && kill -0 "$ADAPTER_PID" \
+            >/dev/null 2>&1
+    then
+
+        log "SIGTERM Stanford adapter PID $ADAPTER_PID"
+
+        kill -TERM "$ADAPTER_PID" \
+            >/dev/null 2>&1 || true
+
+        sleep 0.5
+    fi
+
+
+    #
+    # 3. Guarantee the original Stanford service does
+    # not become another hardware writer during handoff.
+    #
+
+    sudo -n systemctl stop robot.service \
+        >/dev/null 2>&1 || true
+
+
+    #
+    # 4. CHAMP remained alive and has received zero.
+    #
+
+    log "allowing CHAMP zero trajectory to settle"
+
+    sleep 1.25
+
+
+    #
+    # 5. Restore the exact servo_interface process we
+    # originally froze.
+    #
+
+    if [ -n "$SERVO_PID" ] \
+       && [ -r "/proc/$SERVO_PID/cmdline" ]
+    then
+
+        cmd="$(
+            tr '\0' ' ' \
+                < "/proc/$SERVO_PID/cmdline"
+        )"
+
+        if printf '%s\n' "$cmd" \
+            | grep -Fq \
+                '/mini_pupper_driver/lib/mini_pupper_driver/servo_interface'
+        then
+
+            log "SIGCONT servo_interface PID $SERVO_PID"
+
+            kill -CONT "$SERVO_PID" \
+                >/dev/null 2>&1 || true
+
+            sleep 0.75
+
+        else
+
+            log "REFUSING SIGCONT: PID $SERVO_PID changed identity."
+        fi
+
+    else
+
+        log "servo_interface PID $SERVO_PID no longer exists."
+    fi
+
+
+    #
+    # 6. Restore normal Stanford service to idle gate.
+    #
+
+    sudo -n systemctl start robot.service \
+        >/dev/null 2>&1 || true
+
+    sleep 0.75
+
+    log "restoration sequence complete"
+}
+
+
+handle_stop()
+{
+    STOP_REQUESTED=1
+
+    log "ownership stop requested"
+
+    restore
+}
+
+
+trap restore EXIT
+trap handle_stop INT TERM HUP
+
+
+log "starting guarded Stanford ownership"
+
+
+test -x "$ADAPTER" \
+    || fail "installed Stanford adapter missing: $ADAPTER"
+
+
+#
+# Establish ROS environment before querying graph.
+#
+
+#
+# ROS environment setup scripts reference optional shell
+# variables that may be unset. Temporarily disable nounset
+# while sourcing them, then restore the wrapper's strict mode.
+#
+set +u
+
+source /opt/ros/humble/setup.bash
+source "$WS/install/setup.bash"
+
+set -u
+
+export AMENT_PREFIX_PATH="$PREFIX${AMENT_PREFIX_PATH:+:$AMENT_PREFIX_PATH}"
+
+PY_SITE="$PREFIX/lib/python3.10/site-packages"
+
+if [ -d "$PY_SITE" ]; then
+
+    export PYTHONPATH="$PY_SITE${PYTHONPATH:+:$PYTHONPATH}"
+
+fi
+
+
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}"
+export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
+export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+
+unset ROS_DISCOVERY_SERVER
+unset ROS_SUPER_CLIENT
+unset FASTRTPS_DEFAULT_PROFILES_FILE
+unset FASTDDS_DEFAULT_PROFILES_FILE
+
+
+#
+# Robot Bridge must begin at zero.
+#
+
+STATUS_FILE="$(
+    mktemp \
+        /tmp/mayday-stanford-owner-status.XXXXXX
+)"
+
+trap '
+    rm -f "$STATUS_FILE"
+    restore
+' EXIT
+
+
+curl -fsS \
+    --connect-timeout 2 \
+    --max-time 5 \
+    "$ROBOT_BRIDGE_URL/status" \
+    > "$STATUS_FILE"
+
+
+python3 - "$STATUS_FILE" <<'PY'
+import json
+import sys
+
+data = json.load(
+    open(
+        sys.argv[1],
+        encoding="utf-8",
+    )
+)
+
+motion = data.get("motion") or {}
+
+assert abs(
+    float(
+        motion["linear_x"]
+    )
+) < 1e-9
+
+assert abs(
+    float(
+        motion["angular_z"]
+    )
+) < 1e-9
+
+assert motion["streaming"] is False
+PY
+
+
+log "Robot Bridge initially zero"
+
+
+#
+# Require exactly one normal locomotion chain.
+#
+
+CHAMP_PID="$(
+    find_exactly_one \
+        "$CHAMP_PATTERN" \
+        "CHAMP"
+)"
+
+SERVO_PID="$(
+    find_exactly_one \
+        "$SERVO_PATTERN" \
+        "servo_interface"
+)"
+
+require_unfrozen \
+    "$CHAMP_PID" \
+    "CHAMP"
+
+require_unfrozen \
+    "$SERVO_PID" \
+    "servo_interface"
+
+
+#
+# No previous ROS Stanford adapter may exist.
+#
+
+if pgrep -f "$ADAPTER_PATTERN" \
+    >/dev/null
+then
+
+    pgrep -af "$ADAPTER_PATTERN" \
+        || true
+
+    fail "Stanford ROS adapter already running."
+fi
+
+
+#
+# Original Stanford service must be active and waiting
+# at its manual activation gate.
+#
+
+systemctl is-active --quiet robot.service \
+    || fail "robot.service is not active."
+
+
+LATEST="$(
+    journalctl \
+        -u robot.service \
+        -n 100 \
+        --no-pager \
+        -o cat \
+    | grep -E \
+        'Waiting for L1|Robot activated|Deactivating Robot' \
+    | tail -n 1 \
+    || true
+)"
+
+case "$LATEST" in
+
+    *"Waiting for L1 to activate robot."*)
+        ;;
+
+    *)
+        fail "robot.service is not confirmed idle at L1 gate."
+        ;;
+
+esac
+
+
+#
+# Safety zero before changing ownership.
+#
+
+bridge_stop
+
+sleep 0.15
+
+
+#
+# Remove both normal hardware writers.
+#
+
+sudo -n systemctl stop robot.service
+
+sleep 0.4
+
+
+if systemctl is-active --quiet robot.service
+then
+    fail "robot.service remained active."
+fi
+
+
+kill -STOP "$SERVO_PID"
+
+sleep 0.4
+
+require_frozen \
+    "$SERVO_PID" \
+    "servo_interface"
+
+require_unfrozen \
+    "$CHAMP_PID" \
+    "CHAMP"
+
+
+log "exclusive Stanford ownership gate established"
+
+
+#
+# Start adapter.
+#
+
+if [ "$DRY_RUN" = "1" ]; then
+
+    ADAPTER_DRY_RUN="true"
+    export MAYDAY_STANFORD_HARDWARE=0
+
+else
+
+    ADAPTER_DRY_RUN="false"
+    export MAYDAY_STANFORD_HARDWARE=1
+
+fi
+
+
+"$ADAPTER" \
+    --ros-args \
+    -p "dry_run:=$ADAPTER_DRY_RUN" \
+    -p "command_timeout:=$COMMAND_TIMEOUT" \
+    -p "max_linear_x:=$MAX_LINEAR_X" \
+    -p max_linear_y:=0.0 \
+    -p "max_angular_z:=$MAX_ANGULAR_Z" \
+    &
+
+ADAPTER_PID=$!
+
+
+log "Stanford adapter PID $ADAPTER_PID"
+log "dry_run=$ADAPTER_DRY_RUN"
+
+
+#
+# Require adapter to remain alive and subscribe.
+#
+
+READY=0
+
+for _ in $(seq 1 60)
+do
+
+    #
+    # A systemd stop can arrive while ownership is still
+    # establishing. Never continue startup after restoration
+    # has already been requested.
+    #
+    if [ "$STOP_REQUESTED" = "1" ]; then
+        break
+    fi
+
+
+    if ! kill -0 "$ADAPTER_PID" \
+        >/dev/null 2>&1
+    then
+
+        if [ "$STOP_REQUESTED" = "1" ]; then
+            break
+        fi
+
+        fail "Stanford adapter exited during startup."
+    fi
+
+
+    SUBS="$(
+        ros2 topic info \
+            /cmd_vel \
+            2>/dev/null \
+        | awk '
+            /Subscription count:/ {
+                print $3
+            }
+        '
+    )"
+
+
+    if [ "$STOP_REQUESTED" = "1" ]; then
+        break
+    fi
+
+
+    if [ "${SUBS:-0}" -ge 2 ]; then
+
+        READY=1
+        break
+
+    fi
+
+
+    sleep 0.1
+done
+
+
+if [ "$STOP_REQUESTED" = "1" ]; then
+
+    log "Stanford ownership stop completed during startup"
+
+    exit 0
+fi
+
+
+[ "$READY" = "1" ] \
+    || fail "Stanford adapter did not subscribe to /cmd_vel."
+
+
+log "Stanford ownership ACTIVE"
+
+
+#
+# The wrapper remains the systemd main process.
+# Any adapter exit causes restoration.
+#
+
+set +e
+
+wait "$ADAPTER_PID"
+
+RC=$?
+
+set -e
+
+
+if [ "$STOP_REQUESTED" = "1" ]; then
+
+    log "Stanford ownership stopped cleanly"
+
+    exit 0
+fi
+
+
+log "Stanford adapter exited unexpectedly with status $RC"
+
+exit "$RC"

@@ -1,0 +1,29 @@
+[Unit]
+Description=Mayday Stanford locomotion ownership
+After=network-online.target mayday-robot-bridge.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+
+Environment=HOME=/home/ubuntu
+Environment=ROS_DOMAIN_ID=42
+Environment=ROS_LOCALHOST_ONLY=0
+Environment=RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+
+Environment=MAYDAY_STANFORD_OWNER_DRY_RUN=0
+Environment=MAYDAY_STANFORD_COMMAND_TIMEOUT=0.40
+Environment=MAYDAY_STANFORD_MAX_LINEAR_X=0.15
+Environment=MAYDAY_STANFORD_MAX_ANGULAR_Z=0.20
+
+ExecStart=/home/ubuntu/ros2_ws/install/mini_pupper_stanford/lib/mini_pupper_stanford/mayday_stanford_owner
+
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStopSec=12
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
