@@ -4,7 +4,9 @@ After=network-online.target mayday-robot-bridge.service
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
+TimeoutStartSec=45
 User=ubuntu
 Group=ubuntu
 

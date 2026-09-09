@@ -609,6 +609,21 @@ log "Stanford ownership ACTIVE"
 
 
 #
+# When systemd owns this wrapper, Type=notify keeps
+# systemctl start blocked until exclusive Stanford
+# ownership has actually been established.
+#
+if [ -n "${NOTIFY_SOCKET:-}" ]; then
+
+    systemd-notify \
+        --ready \
+        --status="Stanford ownership ACTIVE" \
+        || fail "unable to notify systemd that ownership is ready."
+
+fi
+
+
+#
 # The wrapper remains the systemd main process.
 # Any adapter exit causes restoration.
 #
