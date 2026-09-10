@@ -26,12 +26,14 @@ install(
 )
 
 install(
-  PROGRAMS scripts/latest_tf_relay.py
+  PROGRAMS
+    scripts/latest_tf_relay.py
+    scripts/stanford_lidar_odometry.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(
-  DIRECTORY behavior_trees launch maps param rviz
+  DIRECTORY behavior_trees config launch maps param rviz
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -79,6 +81,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_guarded_navigation_controller_transform_tolerance
     test/test_guarded_navigation_controller_transform_tolerance.py
+    TIMEOUT 60
+  )
+
+  ament_add_pytest_test(
+    test_stanford_lidar_odometry
+    test/test_stanford_lidar_odometry.py
     TIMEOUT 60
   )
 endif()
