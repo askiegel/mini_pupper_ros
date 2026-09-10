@@ -217,13 +217,66 @@ restore()
 
 
     #
-    # 4. CHAMP remained alive and has received zero.
+    # 4. Resume the exact CHAMP process while the
+    # servo interface remains frozen.
     #
+    # Reassert zero first so CHAMP can rebuild a
+    # zero trajectory before hardware ownership returns.
+    #
+    bridge_stop \
+        >/dev/null 2>&1 || true
+
+    if [ -n "$CHAMP_PID" ] \
+       && [ -r "/proc/$CHAMP_PID/cmdline" ]
+    then
+
+        cmd="$(
+            tr '\0' ' ' \
+                < "/proc/$CHAMP_PID/cmdline"
+        )"
+
+        if printf '%s\n' "$cmd" \
+            | grep -Fq "$CHAMP_PATTERN"
+        then
+
+            champ_state="$(
+                process_state "$CHAMP_PID" \
+                    2>/dev/null || true
+            )"
+
+            if printf '%s\n' "$champ_state" \
+                | grep -Eq \
+                    'T \(stopped\)|t \(tracing stop\)'
+            then
+
+                log "SIGCONT CHAMP PID $CHAMP_PID"
+
+                kill -CONT "$CHAMP_PID" \
+                    >/dev/null 2>&1 || true
+
+                sleep 0.25
+
+            else
+
+                log "CHAMP PID $CHAMP_PID already unfrozen during restoration"
+
+            fi
+
+        else
+
+            log "REFUSING SIGCONT: CHAMP PID $CHAMP_PID changed identity."
+
+        fi
+
+    else
+
+        log "CHAMP PID $CHAMP_PID no longer exists."
+
+    fi
 
     log "allowing CHAMP zero trajectory to settle"
 
     sleep 1.25
-
 
     #
     # 5. Restore the exact servo_interface process we
@@ -484,18 +537,25 @@ then
 fi
 
 
+#
+# Freeze both members of the normal CHAMP locomotion path.
+#
+# CHAMP must not consume /cmd_vel while Stanford owns
+# locomotion. Doing so creates predicted gait odometry
+# even when CHAMP is not the physical actuator owner.
+#
+kill -STOP "$CHAMP_PID"
 kill -STOP "$SERVO_PID"
 
 sleep 0.4
 
 require_frozen \
-    "$SERVO_PID" \
-    "servo_interface"
-
-require_unfrozen \
     "$CHAMP_PID" \
     "CHAMP"
 
+require_frozen \
+    "$SERVO_PID" \
+    "servo_interface"
 
 log "exclusive Stanford ownership gate established"
 
