@@ -28,7 +28,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'output_encoding',
-            default_value='yuv422_yuy2',
+            default_value='bgr8',
             description='Output encoding for the camera'
         ),
         Node(
