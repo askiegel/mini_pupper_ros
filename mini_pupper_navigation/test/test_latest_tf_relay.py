@@ -41,15 +41,20 @@ def make_transform(parent, child, nanosec):
     return transform
 
 
-def test_guarded_runtime_uses_odometry_tf_relay():
-    source = (
+def test_guarded_runtime_uses_localization_tf_relay():
+    guarded = (
         PACKAGE
         / "launch"
         / "guarded_navigation.launch.py"
     ).read_text()
+    localization_source = (
+        PACKAGE
+        / "launch"
+        / "localization.launch.py"
+    ).read_text()
 
     relay = (
-        'executable="odometry_nav_tf_relay"'
+        "executable='odometry_nav_tf_relay'"
     )
 
     legacy_relay = (
@@ -58,8 +63,8 @@ def test_guarded_runtime_uses_odometry_tf_relay():
 
     remap = (
         'SetRemap(\n'
-        '            src="/tf",\n'
-        '            dst="/nav_tf",\n'
+        "            src='/tf',\n"
+        "            dst='/nav_tf',\n"
         '        )'
     )
 
@@ -69,13 +74,14 @@ def test_guarded_runtime_uses_odometry_tf_relay():
         "                localization_launch"
     )
 
-    assert relay in source
-    assert legacy_relay not in source
-    assert remap in source
-    assert localization in source
+    assert relay not in guarded
+    assert legacy_relay not in guarded
+    assert remap not in guarded
+    assert localization in guarded
 
-    assert source.index(relay) < source.index(remap)
-    assert source.index(remap) < source.index(localization)
+    assert relay in localization_source
+    assert remap in localization_source
+    assert localization_source.index(relay) < localization_source.index(remap)
 
 
 def test_latest_tf_relay_uses_non_backlogging_input():

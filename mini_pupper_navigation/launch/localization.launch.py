@@ -21,6 +21,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.actions import SetRemap
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -79,6 +80,16 @@ def generate_launch_description():
             'initial_pose_yaw',
             default_value='0.0',
             description='Initial map-frame yaw in radians',
+        ),
+        Node(
+            package='mini_pupper_navigation',
+            executable='odometry_nav_tf_relay',
+            name='localization_tf_relay',
+            output='screen',
+        ),
+        SetRemap(
+            src='/tf',
+            dst='/nav_tf',
         ),
         Node(
             package='nav2_map_server',

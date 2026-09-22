@@ -22,6 +22,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCH = ROOT / "launch" / "guarded_navigation.launch.py"
+LOCALIZATION_LAUNCH = ROOT / "launch" / "localization.launch.py"
 PARAMS = ROOT / "param" / "mayday_guarded_navigation.yaml"
 TREE = (
     ROOT
@@ -260,3 +261,13 @@ def test_localization_lifecycle_precedes_guarded_navigation():
     assert controller < guarded_manager
     assert navigator < guarded_manager
 
+
+def test_guarded_navigation_delegates_tf_relay_to_localization():
+    guarded = text(LAUNCH)
+    localization = text(LOCALIZATION_LAUNCH)
+
+    assert '"localization.launch.py"' in guarded
+    assert 'odometry_nav_tf_relay' not in guarded
+    assert 'SetRemap' not in guarded
+    assert localization.count('odometry_nav_tf_relay') == 1
+    assert localization.count("dst='/nav_tf'") == 1

@@ -18,6 +18,12 @@ GUARDED = (
     / "guarded_navigation.launch.py"
 )
 
+LOCALIZATION = (
+    PACKAGE
+    / "launch"
+    / "localization.launch.py"
+)
+
 MAPPING = (
     PACKAGE
     / "launch"
@@ -107,26 +113,29 @@ def test_cpp_relay_outputs_only_two_odom_transforms():
     )
 
 
-def test_guarded_fixed_map_launch_uses_cpp_relay():
-    source = text(GUARDED)
+def test_localization_launch_uses_cpp_relay():
+    guarded = text(GUARDED)
+    localization = text(LOCALIZATION)
 
     assert (
-        'executable="odometry_nav_tf_relay"'
-        in source
+        "executable='odometry_nav_tf_relay'"
+        in localization
     )
 
     assert (
-        'name="guarded_navigation_tf_relay"'
-        in source
+        "name='localization_tf_relay'"
+        in localization
     )
 
     assert (
         'executable="latest_tf_relay.py"'
-        not in source
+        not in localization
     )
 
-    assert 'src="/tf"' in source
-    assert 'dst="/nav_tf"' in source
+    assert "src='/tf'" in localization
+    assert "dst='/nav_tf'" in localization
+    assert 'odometry_nav_tf_relay' not in guarded
+    assert 'SetRemap' not in guarded
 
 
 def test_mapping_runtime_keeps_existing_tf_relay():

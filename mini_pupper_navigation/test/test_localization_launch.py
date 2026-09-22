@@ -77,11 +77,16 @@ def test_launch_description_builds():
     description = module.generate_launch_description()
 
     assert description is not None
-    assert len(description.entities) == 10
+    assert len(description.entities) == 12
 
 
 def test_launch_contains_only_localization_nodes():
     assert node_definitions() == [
+        {
+            'package': 'mini_pupper_navigation',
+            'executable': 'odometry_nav_tf_relay',
+            'name': 'localization_tf_relay',
+        },
         {
             'package': 'nav2_map_server',
             'executable': 'map_server',
@@ -104,10 +109,15 @@ def test_launch_requires_explicit_map_and_is_headless():
     source = LAUNCH_FILE.read_text(encoding='utf-8')
 
     assert "DeclareLaunchArgument(\n            'map'," in source
+    assert "executable='odometry_nav_tf_relay'" in source
+    assert "name='localization_tf_relay'" in source
+    assert "SetRemap(\n            src='/tf',\n            dst='/nav_tf'," in source
     assert 'rviz2' not in source
     assert 'controller_server' not in source
     assert 'planner_server' not in source
     assert 'bt_navigator' not in source
+    assert 'cmd_vel' not in source
+    assert 'NavigateToPose' not in source
 
 
 def test_amcl_parameters_match_mayday_runtime():
