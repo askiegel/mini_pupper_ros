@@ -7,7 +7,7 @@
     Guarded ROS 2 cmd_vel adapter for Mayday's StanfordQuadruped locomotion backend.
   </description>
 
-  <maintainer email="ubuntu@localhost">
+  <maintainer email="ubuntu@minipupperv2.local">
     Mayday
   </maintainer>
 
