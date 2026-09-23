@@ -71,20 +71,33 @@ def test_cpp_relay_uses_non_backlogging_input_qos():
     )
 
 
-def test_cpp_relay_publishes_nav_tf_at_ten_hz():
+def test_cpp_relay_publishes_nav_tf_on_odometry_updates():
     source = text(SOURCE)
 
     assert '"/nav_tf"' in source
+    assert "create_wall_timer(" not in source
+    assert "100ms" not in source
+    assert "rclcpp::TimerBase" not in source
+    assert source.count("publish_latest();") == 2
+    assert "void update_odom(" in source
+    assert "void update_local_odom(" in source
 
-    assert (
-        "create_wall_timer("
-        in source
+
+def test_cpp_relay_requires_both_odom_samples_before_publish():
+    source = text(SOURCE)
+
+    assert "if (!odom || !local_odom)" in source
+    assert source.index("if (!odom || !local_odom)") < source.index(
+        "publisher_->publish(message);"
     )
 
-    assert (
-        "100ms"
-        in source
-    )
+
+def test_cpp_relay_preserves_source_stamps_without_retimestamping():
+    source = text(SOURCE)
+
+    assert "transform.header = message.header;" in source
+    assert "get_clock()" not in source
+    assert ".now()" not in source
 
 
 def test_cpp_relay_outputs_only_two_odom_transforms():

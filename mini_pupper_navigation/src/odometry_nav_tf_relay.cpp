@@ -6,7 +6,6 @@
  * Licensed under the Apache License, Version 2.0.
  */
 
-#include <chrono>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -15,8 +14,6 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
-
-using namespace std::chrono_literals;
 
 class OdometryNavTfRelay : public rclcpp::Node
 {
@@ -46,8 +43,7 @@ public:
         [this](
           nav_msgs::msg::Odometry::ConstSharedPtr message)
         {
-          std::lock_guard<std::mutex> lock(mutex_);
-          latest_odom_ = std::move(message);
+          update_odom(std::move(message));
         });
 
     local_odom_subscription_ =
@@ -57,22 +53,13 @@ public:
         [this](
           nav_msgs::msg::Odometry::ConstSharedPtr message)
         {
-          std::lock_guard<std::mutex> lock(mutex_);
-          latest_local_odom_ = std::move(message);
-        });
-
-    timer_ =
-      create_wall_timer(
-        100ms,
-        [this]()
-        {
-          publish_latest();
+          update_local_odom(std::move(message));
         });
 
     RCLCPP_INFO(
-      get_logger(),
-      "Guarded navigation odometry TF relay: "
-      "/odom + /odom/local -> /nav_tf at 10 Hz");
+        get_logger(),
+        "Guarded navigation odometry TF relay: "
+      "/odom + /odom/local -> /nav_tf on odometry updates");
   }
 
 private:
@@ -95,6 +82,28 @@ private:
       message.pose.pose.orientation;
 
     return transform;
+  }
+
+  void update_odom(
+    nav_msgs::msg::Odometry::ConstSharedPtr message)
+  {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      latest_odom_ = std::move(message);
+    }
+
+    publish_latest();
+  }
+
+  void update_local_odom(
+    nav_msgs::msg::Odometry::ConstSharedPtr message)
+  {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      latest_local_odom_ = std::move(message);
+    }
+
+    publish_latest();
   }
 
   void publish_latest()
@@ -145,8 +154,6 @@ private:
   rclcpp::Publisher<
     tf2_msgs::msg::TFMessage>::SharedPtr
     publisher_;
-
-  rclcpp::TimerBase::SharedPtr timer_;
 };
 
 
