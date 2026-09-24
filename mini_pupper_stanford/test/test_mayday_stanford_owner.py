@@ -65,12 +65,41 @@ def test_acquisition_verifies_freeze_before_adapter_start_and_ready():
     frozen_servo = text.index('"servo_interface"', frozen_champ)
     gate = text.index("exclusive Stanford ownership gate established")
     adapter_start = text.index('"$ADAPTER"', gate)
-    subscription = text.index("ros2 topic info", adapter_start)
-    ready = text.index("systemd-notify", subscription)
+    health = text.index("require_healthy_adapter", adapter_start)
+    node = text.index("adapter_node_subscribes_to_cmd_vel", health)
+    ready = text.index("systemd-notify", node)
 
     assert frozen_champ < frozen_servo < gate < adapter_start
-    assert subscription < ready
-    assert 'SUBS:-0' in text
+    assert health < node < ready
+
+
+def test_readiness_is_exact_adapter_node_not_global_subscription_count():
+    text = source()
+
+    assert "ros2 topic info" not in text
+    assert "Subscription count:" not in text
+    assert "adapter_node_subscribes_to_cmd_vel" in text
+    assert "ros2 node list" in text
+    assert "grep -Fx '/stanford_cmd_vel'" in text
+    assert "multiple /stanford_cmd_vel nodes found" in text
+    assert "ros2 node info /stanford_cmd_vel" in text
+    assert '"/cmd_vel:"' in text
+    assert '"geometry_msgs/msg/Twist"' in text
+
+
+def test_readiness_rejects_zombie_or_changed_adapter_before_active_notify():
+    text = source()
+
+    health = text.index("require_healthy_adapter()")
+    assert '"/proc/$ADAPTER_PID/cmdline"' in text[health:]
+    assert 'Z \\(zombie\\)' in text[health:]
+    assert "$ADAPTER_PATTERN" in text[health:]
+
+    final_health = text.rindex("require_healthy_adapter")
+    active = text.index("Stanford ownership ACTIVE")
+    notify = text.index("systemd-notify")
+
+    assert final_health < active < notify
 
 
 def test_restore_preserves_zero_adapter_stop_and_normal_writer_order():

@@ -141,6 +141,62 @@ bridge_stop()
 }
 
 
+require_healthy_adapter()
+{
+    local cmd
+    local state
+
+    if [ -z "$ADAPTER_PID" ] \
+       || ! kill -0 "$ADAPTER_PID" >/dev/null 2>&1
+    then
+        return 1
+    fi
+
+    [ -r "/proc/$ADAPTER_PID/cmdline" ] \
+        || return 1
+
+    cmd="$(tr '\0' ' ' < "/proc/$ADAPTER_PID/cmdline")"
+
+    printf '%s\n' "$cmd" | grep -Fq "$ADAPTER_PATTERN" \
+        || return 1
+
+    state="$(process_state "$ADAPTER_PID" 2>/dev/null || true)"
+
+    printf '%s\n' "$state" | grep -Eq 'Z \(zombie\)' \
+        && return 1
+
+    return 0
+}
+
+
+adapter_node_subscribes_to_cmd_vel()
+{
+    local node_count
+
+    node_count="$(
+        ros2 node list 2>/dev/null \
+        | grep -Fx '/stanford_cmd_vel' \
+        | wc -l
+    )"
+
+    if [ "$node_count" -gt 1 ]; then
+        fail "multiple /stanford_cmd_vel nodes found."
+    fi
+
+    [ "$node_count" -eq 1 ] \
+        || return 1
+
+    ros2 node info /stanford_cmd_vel 2>/dev/null \
+        | awk '
+            $1 == "/cmd_vel:" \
+                && $2 == "geometry_msgs/msg/Twist" {
+                found = 1
+            }
+            END { exit !found }
+        '
+}
+
+
 restore()
 {
     if [ "$RESTORED" = "1" ]; then
@@ -545,28 +601,8 @@ do
     fi
 
 
-    if ! kill -0 "$ADAPTER_PID" \
-        >/dev/null 2>&1
-    then
-
-        if [ "$STOP_REQUESTED" = "1" ]; then
-            break
-        fi
-
-        fail "Stanford adapter exited during startup."
-    fi
-
-
-    SUBS="$(
-        ros2 topic info \
-            /cmd_vel \
-            2>/dev/null \
-        | awk '
-            /Subscription count:/ {
-                print $3
-            }
-        '
-    )"
+    require_healthy_adapter \
+        || fail "Stanford adapter is not healthy during startup."
 
 
     if [ "$STOP_REQUESTED" = "1" ]; then
@@ -574,7 +610,7 @@ do
     fi
 
 
-    if [ "${SUBS:-0}" -ge 2 ]; then
+    if adapter_node_subscribes_to_cmd_vel; then
 
         READY=1
         break
@@ -596,6 +632,10 @@ fi
 
 [ "$READY" = "1" ] \
     || fail "Stanford adapter did not subscribe to /cmd_vel."
+
+
+require_healthy_adapter \
+    || fail "Stanford adapter is not healthy at readiness."
 
 
 log "Stanford ownership ACTIVE"
