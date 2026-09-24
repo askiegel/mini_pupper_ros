@@ -42,6 +42,10 @@ setup(
                 "stanford_cmd_vel = "
                 "mini_pupper_stanford.stanford_cmd_vel:main"
             ),
+            (
+                "stanford_readiness_probe = "
+                "mini_pupper_stanford.stanford_readiness_probe:main"
+            ),
         ],
     },
 )

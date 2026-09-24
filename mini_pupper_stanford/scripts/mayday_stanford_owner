@@ -598,41 +598,15 @@ log "dry_run=$ADAPTER_DRY_RUN"
 # Require adapter to remain alive and subscribe.
 #
 
-READY=0
-READINESS_DEADLINE=$((SECONDS + 6))
+require_healthy_adapter \
+    || fail "Stanford adapter is not healthy during startup."
 
-while [ "$SECONDS" -lt "$READINESS_DEADLINE" ]
-do
+READINESS_PROBE="$PREFIX/lib/$PKG/stanford_readiness_probe"
 
-    #
-    # A systemd stop can arrive while ownership is still
-    # establishing. Never continue startup after restoration
-    # has already been requested.
-    #
-    if [ "$STOP_REQUESTED" = "1" ]; then
-        break
-    fi
-
-
-    require_healthy_adapter \
-        || fail "Stanford adapter is not healthy during startup."
-
-
-    if [ "$STOP_REQUESTED" = "1" ]; then
-        break
-    fi
-
-
-    if adapter_node_matches_pid_and_subscribes_to_cmd_vel; then
-
-        READY=1
-        break
-
-    fi
-
-
-    sleep 0.1
-done
+timeout 27 "$READINESS_PROBE" \
+    --expected-pid "$ADAPTER_PID" \
+    --timeout 25.0 \
+    || fail "Stanford adapter did not become exactly ready."
 
 
 if [ "$STOP_REQUESTED" = "1" ]; then
@@ -641,10 +615,6 @@ if [ "$STOP_REQUESTED" = "1" ]; then
 
     exit 0
 fi
-
-
-[ "$READY" = "1" ] \
-    || fail "Stanford adapter did not subscribe to /cmd_vel."
 
 
 require_healthy_adapter \
