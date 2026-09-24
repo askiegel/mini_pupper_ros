@@ -31,6 +31,7 @@ ADAPTER_PATTERN='/mini_pupper_stanford/lib/mini_pupper_stanford/stanford_cmd_vel
 SERVO_PID=""
 CHAMP_PID=""
 ADAPTER_PID=""
+READINESS_PID=""
 
 RESTORED=0
 STOP_REQUESTED=0
@@ -170,44 +171,20 @@ require_healthy_adapter()
 }
 
 
-adapter_node_matches_pid_and_subscribes_to_cmd_vel()
+stop_readiness_probe()
 {
-    local node_count
-    local node_pid
-
-    node_count="$(
-        timeout 2 ros2 node list 2>/dev/null \
-        | grep -Fx '/stanford_cmd_vel' \
-        | wc -l
-    )"
-
-    if [ "$node_count" -gt 1 ]; then
-        fail "multiple /stanford_cmd_vel nodes found."
+    if [ -z "$READINESS_PID" ]; then
+        return
     fi
 
-    [ "$node_count" -eq 1 ] \
-        || return 1
+    if kill -0 "$READINESS_PID" >/dev/null 2>&1; then
+        log "SIGTERM Stanford readiness probe PID $READINESS_PID"
+        kill -TERM "$READINESS_PID" >/dev/null 2>&1 || true
+    fi
 
-    timeout 2 ros2 node info /stanford_cmd_vel 2>/dev/null \
-        | awk '
-            $1 == "/cmd_vel:" \
-                && $2 == "geometry_msgs/msg/Twist" {
-                found = 1
-            }
-            END { exit !found }
-        ' \
-        || return 1
-
-    node_pid="$(
-        timeout 2 ros2 param get \
-            /stanford_cmd_vel process_pid 2>/dev/null \
-        | sed -n \
-            's/^Integer value is: \([0-9][0-9]*\)$/\1/p'
-    )"
-
-    [ "$node_pid" = "$ADAPTER_PID" ]
+    wait "$READINESS_PID" 2>/dev/null || true
+    READINESS_PID=""
 }
-
 
 restore()
 {
@@ -218,6 +195,8 @@ restore()
     RESTORED=1
 
     set +e
+
+    stop_readiness_probe
 
     log "restoring normal Mayday actuator ownership"
 
@@ -603,10 +582,46 @@ require_healthy_adapter \
 
 READINESS_PROBE="$PREFIX/lib/$PKG/stanford_readiness_probe"
 
-timeout 27 "$READINESS_PROBE" \
+"$READINESS_PROBE" \
     --expected-pid "$ADAPTER_PID" \
     --timeout 25.0 \
-    || fail "Stanford adapter did not become exactly ready."
+    &
+
+READINESS_PID=$!
+
+while kill -0 "$READINESS_PID" >/dev/null 2>&1 \
+    && ! process_state "$READINESS_PID" 2>/dev/null \
+        | grep -Eq 'State:[[:space:]]+[Zz]'
+do
+    if [ "$STOP_REQUESTED" = "1" ]; then
+        stop_readiness_probe
+
+        log "Stanford ownership stop completed during startup"
+
+        exit 0
+    fi
+
+    require_healthy_adapter \
+        || fail "Stanford adapter is not healthy while readiness is pending."
+
+    sleep 0.1
+done
+
+if [ "$STOP_REQUESTED" = "1" ]; then
+    stop_readiness_probe
+
+    log "Stanford ownership stop completed during startup"
+
+    exit 0
+fi
+
+if ! wait "$READINESS_PID"; then
+    READINESS_PID=""
+
+    fail "Stanford adapter did not become exactly ready."
+fi
+
+READINESS_PID=""
 
 
 if [ "$STOP_REQUESTED" = "1" ]; then

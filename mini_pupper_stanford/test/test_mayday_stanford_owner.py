@@ -80,28 +80,22 @@ def test_acquisition_verifies_freeze_before_adapter_start_and_ready():
     gate = text.index("exclusive Stanford ownership gate established")
     adapter_start = text.index('"$ADAPTER"', gate)
     health = text.index("require_healthy_adapter", adapter_start)
-    node = text.index(
-        "adapter_node_matches_pid_and_subscribes_to_cmd_vel",
-        health,
-    )
-    ready = text.index("systemd-notify", node)
+    readiness = text.index('"$READINESS_PROBE"', health)
+    ready = text.index("systemd-notify", readiness)
 
     assert frozen_champ < frozen_servo < gate < adapter_start
-    assert health < node < ready
+    assert health < readiness < ready
 
 
-def test_readiness_is_exact_adapter_node_not_global_subscription_count():
+def test_readiness_is_managed_by_the_persistent_probe_not_shell_ros_cli():
     text = source()
 
-    assert "ros2 topic info" not in text
-    assert "Subscription count:" not in text
-    assert "adapter_node_matches_pid_and_subscribes_to_cmd_vel" in text
-    assert "ros2 node list" in text
-    assert "grep -Fx '/stanford_cmd_vel'" in text
-    assert "multiple /stanford_cmd_vel nodes found" in text
-    assert "ros2 node info /stanford_cmd_vel" in text
-    assert '"/cmd_vel:"' in text
-    assert '"geometry_msgs/msg/Twist"' in text
+    assert "adapter_node_matches_pid_and_subscribes_to_cmd_vel" not in text
+    assert "ros2 node" not in text
+    assert "ros2 param" not in text
+    assert '"$READINESS_PROBE"' in text
+    assert "READINESS_PID=$!" in text
+    assert 'while kill -0 "$READINESS_PID"' in text
 
 
 def test_readiness_rejects_zombie_or_changed_adapter_before_active_notify():
@@ -119,16 +113,16 @@ def test_readiness_rejects_zombie_or_changed_adapter_before_active_notify():
     assert final_health < active < notify
 
 
-def test_adapter_process_pid_is_bound_to_owner_pid_before_ready():
+def test_owner_checks_adapter_and_stop_requests_while_readiness_is_pending():
     text = source()
 
-    assert "ros2 param get" in text
-    assert "/stanford_cmd_vel process_pid" in text
-    assert '"$node_pid" = "$ADAPTER_PID"' in text
-    assert "timeout 2 ros2 node list" in text
-    assert "timeout 2 ros2 node info" in text
-    assert "timeout 2 ros2 param get" in text
-    assert "READINESS_DEADLINE" in text
+    pending = text.index('while kill -0 "$READINESS_PID"')
+    assert 'if [ "$STOP_REQUESTED" = "1" ]' in text[pending:]
+    assert "require_healthy_adapter" in text[pending:]
+    assert "stop_readiness_probe" in text
+    assert text.index("stop_readiness_probe", text.index("restore()")) < text.index(
+        "restoring normal Mayday actuator ownership"
+    )
 
 
 def test_restore_preserves_zero_adapter_stop_and_normal_writer_order():
