@@ -208,16 +208,7 @@ restore()
 
 
     #
-    # 3. Guarantee the original Stanford service does
-    # not become another hardware writer during handoff.
-    #
-
-    sudo -n systemctl stop robot.service \
-        >/dev/null 2>&1 || true
-
-
-    #
-    # 4. Resume the exact CHAMP process while the
+    # 3. Resume the exact CHAMP process while the
     # servo interface remains frozen.
     #
     # Reassert zero first so CHAMP can rebuild a
@@ -279,7 +270,7 @@ restore()
     sleep 1.25
 
     #
-    # 5. Restore the exact servo_interface process we
+    # 4. Restore the exact servo_interface process we
     # originally froze.
     #
 
@@ -313,16 +304,6 @@ restore()
 
         log "servo_interface PID $SERVO_PID no longer exists."
     fi
-
-
-    #
-    # 6. Restore normal Stanford service to idle gate.
-    #
-
-    sudo -n systemctl start robot.service \
-        >/dev/null 2>&1 || true
-
-    sleep 0.75
 
     log "restoration sequence complete"
 }
@@ -481,60 +462,12 @@ fi
 
 
 #
-# Original Stanford service must be active and waiting
-# at its manual activation gate.
-#
-
-systemctl is-active --quiet robot.service \
-    || fail "robot.service is not active."
-
-
-LATEST="$(
-    journalctl \
-        -u robot.service \
-        -n 100 \
-        --no-pager \
-        -o cat \
-    | grep -E \
-        'Waiting for L1|Robot activated|Deactivating Robot' \
-    | tail -n 1 \
-    || true
-)"
-
-case "$LATEST" in
-
-    *"Waiting for L1 to activate robot."*)
-        ;;
-
-    *)
-        fail "robot.service is not confirmed idle at L1 gate."
-        ;;
-
-esac
-
-
-#
 # Safety zero before changing ownership.
 #
 
 bridge_stop
 
 sleep 0.15
-
-
-#
-# Remove both normal hardware writers.
-#
-
-sudo -n systemctl stop robot.service
-
-sleep 0.4
-
-
-if systemctl is-active --quiet robot.service
-then
-    fail "robot.service remained active."
-fi
 
 
 #
