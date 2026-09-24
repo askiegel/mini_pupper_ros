@@ -32,8 +32,17 @@ def test_graph_readiness_decisions_are_exact_and_pid_bound():
     assert evaluate([], [], [], 1) == WAIT
     assert evaluate(nodes, [], [], 1) == WAIT
     assert evaluate(nodes, subscriptions, [], 1) == WAIT
+    assert identity_topic(12345) == (
+        "/stanford_cmd_vel/process_identity/pid_12345"
+    )
     assert evaluate(nodes, subscriptions, [marker(1)], 1) == READY
     assert evaluate(nodes, subscriptions, [marker(2)], 1) == FAIL
+    assert evaluate(
+        nodes,
+        subscriptions,
+        [("/stanford_cmd_vel/process_identity/1", IDENTITY_TYPE)],
+        1,
+    ) == WAIT
     assert evaluate(nodes, subscriptions, [marker(1), marker(2)], 1) == FAIL
     assert evaluate(nodes, subscriptions, [marker("not-a-pid")], 1) == FAIL
     assert evaluate(nodes, subscriptions, [marker(1, ["wrong/type"])], 1) == FAIL
@@ -49,7 +58,7 @@ def test_unrelated_graph_endpoints_do_not_grant_readiness():
     ]
 
     assert evaluate(nodes, unrelated_subscriptions, [marker(1)], 1) == WAIT
-    assert evaluate(nodes, [CMD_VEL_SUBSCRIPTION], unrelated_publishers, 1) == FAIL
+    assert evaluate(nodes, [CMD_VEL_SUBSCRIPTION], unrelated_publishers, 1) == WAIT
 
 
 def test_timeout_diagnostic_represents_graph_wait_states():
@@ -99,7 +108,10 @@ def test_fatal_diagnostics_name_identity_failure():
         "mismatched process identity PID", identity_topic(7), 8
     )
     assert "mismatched process identity PID" in diagnostic
-    assert "expected_identity_marker=/stanford_cmd_vel/process_identity/8" in diagnostic
+    assert (
+        "expected_identity_marker=/stanford_cmd_vel/process_identity/pid_8"
+        in diagnostic
+    )
 
 
 def test_probe_source_has_no_motion_cli_or_parameter_readiness_behavior():

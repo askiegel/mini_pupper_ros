@@ -14,7 +14,7 @@ READY = "READY"
 
 NODE_NAME = "/stanford_cmd_vel"
 CMD_VEL_SUBSCRIPTION = ("/cmd_vel", ["geometry_msgs/msg/Twist"])
-IDENTITY_PREFIX = "/stanford_cmd_vel/process_identity/"
+IDENTITY_PREFIX = "/stanford_cmd_vel/process_identity/pid_"
 IDENTITY_TYPE = ["std_msgs/msg/Empty"]
 
 

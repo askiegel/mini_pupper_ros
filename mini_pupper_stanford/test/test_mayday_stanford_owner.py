@@ -31,7 +31,8 @@ def test_adapter_retains_passive_process_identity_marker_after_hardware_init():
 
     assert "from std_msgs.msg import Empty, String" in text
     assert "self.process_identity_publisher" in text
-    assert 'f"~/process_identity/{os.getpid()}"' in text
+    assert 'f"~/process_identity/pid_{os.getpid()}"' in text
+    assert 'f"~/process_identity/{os.getpid()}"' not in text
     assert "Empty," in text
     assert "self.process_identity_publisher.publish" not in text
     assert text.index("HardwareInterface()") < text.index(

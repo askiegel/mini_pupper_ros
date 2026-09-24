@@ -189,7 +189,7 @@ class StanfordCmdVel(Node):
         self.process_identity_publisher = (
             self.create_publisher(
                 Empty,
-                f"~/process_identity/{os.getpid()}",
+                f"~/process_identity/pid_{os.getpid()}",
                 1,
             )
         )
