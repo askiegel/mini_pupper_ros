@@ -14,7 +14,7 @@ from rclpy.signals import SignalHandlerOptions
 
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Empty, String
 
 
 STANFORD_ROOT = Path(
@@ -184,6 +184,15 @@ class StanfordCmdVel(Node):
             self.hardware = (
                 HardwareInterface()
             )
+
+
+        self.process_identity_publisher = (
+            self.create_publisher(
+                Empty,
+                f"~/process_identity/{os.getpid()}",
+                1,
+            )
+        )
 
 
         self.requested_vx = 0.0

@@ -6,33 +6,66 @@ import sys
 import time
 
 import rclpy
-from rcl_interfaces.msg import ParameterType
-
-try:
-    from rclpy.parameter_client import AsyncParameterClient
-except ImportError:
-    from rcl_interfaces.srv import GetParameters
-
-    class AsyncParameterClient:
-        """Humble-compatible async client for a node's parameter service."""
-
-        def __init__(self, node, remote_node_name):
-            self._client = node.create_client(
-                GetParameters, remote_node_name + "/get_parameters"
-            )
-
-        def service_is_ready(self):
-            return self._client.service_is_ready()
-
-        def get_parameters(self, names):
-            request = GetParameters.Request()
-            request.names = names
-            return self._client.call_async(request)
 
 
 WAIT = "WAIT"
 FAIL = "FAIL"
 READY = "READY"
+
+NODE_NAME = "/stanford_cmd_vel"
+CMD_VEL_SUBSCRIPTION = ("/cmd_vel", ["geometry_msgs/msg/Twist"])
+IDENTITY_PREFIX = "/stanford_cmd_vel/process_identity/"
+IDENTITY_TYPE = ["std_msgs/msg/Empty"]
+
+
+def identity_topic(expected_pid):
+    return IDENTITY_PREFIX + str(expected_pid)
+
+
+def identity_markers(publishers):
+    return [
+        (topic, types)
+        for topic, types in publishers
+        if topic.startswith(IDENTITY_PREFIX)
+    ]
+
+
+def marker_pid(topic, types):
+    suffix = topic.removeprefix(IDENTITY_PREFIX)
+    if not suffix.isdecimal() or types != IDENTITY_TYPE:
+        return "malformed"
+    return int(suffix)
+
+
+def identity_state(publishers, expected_pid):
+    markers = identity_markers(publishers)
+    if len(markers) > 1:
+        return FAIL, "multiple process identity markers"
+    if not markers:
+        return WAIT, None
+    observed_pid = marker_pid(*markers[0])
+    if not isinstance(observed_pid, int):
+        return FAIL, "malformed process identity marker"
+    if observed_pid != expected_pid:
+        return FAIL, "mismatched process identity PID"
+    return READY, None
+
+
+def evaluate(nodes, subscriptions, publishers, expected_pid):
+    matches = [node for node in nodes if node == NODE_NAME]
+    if len(matches) > 1:
+        return FAIL
+    if not matches:
+        return WAIT
+    if CMD_VEL_SUBSCRIPTION not in subscriptions:
+        return WAIT
+    return identity_state(publishers, expected_pid)[0]
+
+
+def failure_reason(nodes, publishers, expected_pid):
+    if sum(node == NODE_NAME for node in nodes) > 1:
+        return "duplicate /stanford_cmd_vel nodes"
+    return identity_state(publishers, expected_pid)[1]
 
 
 def yes_no(value):
@@ -43,10 +76,8 @@ def timeout_diagnostic(
     elapsed,
     node_count,
     cmd_vel_subscription_observed,
-    parameter_service_ready,
-    process_pid_request_issued,
-    process_pid_future_done,
-    process_pid,
+    identity_marker_observed,
+    observed_identity_marker,
     expected_pid,
 ):
     return "\n".join(
@@ -56,76 +87,22 @@ def timeout_diagnostic(
             f"  node_count={node_count}",
             "  cmd_vel_subscription="
             f"{yes_no(cmd_vel_subscription_observed)}",
-            "  parameter_service_ready="
-            f"{yes_no(parameter_service_ready)}",
-            "  process_pid_request_issued="
-            f"{yes_no(process_pid_request_issued)}",
-            "  process_pid_future_done="
-            f"{yes_no(process_pid_future_done)}",
-            f"  process_pid={process_pid}",
+            "  identity_marker_observed="
+            f"{yes_no(identity_marker_observed)}",
+            f"  observed_identity_marker={observed_identity_marker}",
+            f"  expected_identity_marker={identity_topic(expected_pid)}",
             f"  expected_pid={expected_pid}",
         )
     )
 
 
-def failure_diagnostic(reason, process_pid, expected_pid):
+def failure_diagnostic(reason, observed_identity_marker, expected_pid):
     return (
         f"Stanford readiness failed: {reason} "
-        f"(process_pid={process_pid}, expected_pid={expected_pid})"
+        "(observed_identity_marker="
+        f"{observed_identity_marker}, "
+        f"expected_identity_marker={identity_topic(expected_pid)})"
     )
-
-
-def failure_reason(nodes, process_pid):
-    matches = [node for node in nodes if node == "/stanford_cmd_vel"]
-    if len(matches) > 1:
-        return "duplicate /stanford_cmd_vel nodes"
-    if not isinstance(process_pid, int):
-        return "malformed process_pid"
-    return "mismatched process_pid"
-
-
-def evaluate(nodes, subscriptions, process_pid, expected_pid):
-    matches = [node for node in nodes if node == "/stanford_cmd_vel"]
-    if len(matches) > 1:
-        return FAIL
-    if not matches:
-        return WAIT
-    if ("/cmd_vel", ["geometry_msgs/msg/Twist"]) not in subscriptions:
-        return WAIT
-    if process_pid is None:
-        return WAIT
-    if not isinstance(process_pid, int):
-        return FAIL
-    return READY if process_pid == expected_pid else FAIL
-
-
-def process_pid_from_future(future):
-    try:
-        result = future.result()
-    except Exception:
-        return "malformed"
-    if not result.values:
-        return None
-    value = result.values[0]
-    if value.type != ParameterType.PARAMETER_INTEGER:
-        return "malformed"
-    return value.integer_value
-
-
-def poll_process_pid(client, future):
-    """Return the pending request and its completed process PID, if any."""
-    if future is None:
-        return client.get_parameters(["process_pid"]), None
-    if not future.done():
-        return future, None
-    return None, process_pid_from_future(future)
-
-
-def parameter_service_is_ready(client):
-    try:
-        return client.service_is_ready()
-    except Exception:
-        return False
 
 
 def main():
@@ -135,63 +112,53 @@ def main():
     args = parser.parse_args()
     rclpy.init()
     node = rclpy.create_node("stanford_readiness_probe_" + str(os.getpid()))
-    client = AsyncParameterClient(node, "/stanford_cmd_vel")
     started = time.monotonic()
     deadline = started + args.timeout
-    pending_process_pid = None
     node_count = 0
     cmd_vel_subscription_observed = False
-    parameter_service_ready = False
-    process_pid_request_issued = False
-    process_pid_future_done = False
-    last_process_pid = "unavailable"
+    identity_marker_observed = False
+    observed_identity_marker = "unavailable"
     try:
         while time.monotonic() < deadline:
-            rclpy.spin_once(node, timeout_sec=min(0.2, deadline - time.monotonic()))
+            rclpy.spin_once(
+                node, timeout_sec=min(0.2, deadline - time.monotonic())
+            )
             nodes = [
                 ("/" + name if namespace == "/" else namespace + "/" + name)
                 for name, namespace in node.get_node_names_and_namespaces()
             ]
-            node_count = sum(node == "/stanford_cmd_vel" for node in nodes)
-            subs = (
+            node_count = sum(node == NODE_NAME for node in nodes)
+            subscriptions = (
                 node.get_subscriber_names_and_types_by_node(
                     "stanford_cmd_vel", "/"
                 )
-                if "/stanford_cmd_vel" in nodes
+                if NODE_NAME in nodes
                 else []
             )
             cmd_vel_subscription_observed = (
                 cmd_vel_subscription_observed
-                or ("/cmd_vel", ["geometry_msgs/msg/Twist"]) in subs
+                or CMD_VEL_SUBSCRIPTION in subscriptions
             )
-            pid = None
-            if "/stanford_cmd_vel" in nodes:
-                parameter_service_ready = (
-                    parameter_service_ready or parameter_service_is_ready(client)
+            publishers = (
+                node.get_publisher_names_and_types_by_node(
+                    "stanford_cmd_vel", "/"
                 )
-                if pending_process_pid is None:
-                    process_pid_request_issued = True
-                process_pid_future_done = (
-                    process_pid_future_done
-                    or (
-                        pending_process_pid is not None
-                        and pending_process_pid.done()
-                    )
-                )
-                pending_process_pid, pid = poll_process_pid(
-                    client, pending_process_pid
-                )
-                if pending_process_pid is not None:
-                    last_process_pid = "pending"
-                elif pid is not None:
-                    last_process_pid = pid
-            state = evaluate(nodes, subs, pid, args.expected_pid)
+                if NODE_NAME in nodes
+                else []
+            )
+            markers = identity_markers(publishers)
+            if markers:
+                identity_marker_observed = True
+                observed_identity_marker = markers[-1][0]
+            state = evaluate(nodes, subscriptions, publishers, args.expected_pid)
             if state == READY:
                 return 0
             if state == FAIL:
                 print(
                     failure_diagnostic(
-                        failure_reason(nodes, pid), last_process_pid, args.expected_pid
+                        failure_reason(nodes, publishers, args.expected_pid),
+                        observed_identity_marker,
+                        args.expected_pid,
                     ),
                     file=sys.stderr,
                 )
@@ -201,10 +168,8 @@ def main():
                 time.monotonic() - started,
                 node_count,
                 cmd_vel_subscription_observed,
-                parameter_service_ready,
-                process_pid_request_issued,
-                process_pid_future_done,
-                last_process_pid,
+                identity_marker_observed,
+                observed_identity_marker,
                 args.expected_pid,
             ),
             file=sys.stderr,

@@ -26,6 +26,22 @@ def test_adapter_publishes_its_actual_os_pid_as_process_pid_parameter():
     assert text.index('"process_pid"') < text.index("HardwareInterface()")
 
 
+def test_adapter_retains_passive_process_identity_marker_after_hardware_init():
+    text = ADAPTER.read_text(encoding="utf-8")
+
+    assert "from std_msgs.msg import Empty, String" in text
+    assert "self.process_identity_publisher" in text
+    assert 'f"~/process_identity/{os.getpid()}"' in text
+    assert "Empty," in text
+    assert "self.process_identity_publisher.publish" not in text
+    assert text.index("HardwareInterface()") < text.index(
+        "self.process_identity_publisher"
+    )
+    assert text.index("self.process_identity_publisher") < text.index(
+        "self.create_subscription"
+    )
+
+
 def restore_source():
     text = source()
     start = text.index("restore()")
