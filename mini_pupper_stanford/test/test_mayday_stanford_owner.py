@@ -7,9 +7,23 @@ OWNER = (
     / "mayday_stanford_owner"
 )
 
+ADAPTER = (
+    Path(__file__).resolve().parents[1]
+    / "mini_pupper_stanford"
+    / "stanford_cmd_vel.py"
+)
+
 
 def source():
     return OWNER.read_text(encoding="utf-8")
+
+
+def test_adapter_publishes_its_actual_os_pid_as_process_pid_parameter():
+    text = ADAPTER.read_text(encoding="utf-8")
+
+    assert '"process_pid"' in text
+    assert "os.getpid()" in text
+    assert text.index('"process_pid"') < text.index("HardwareInterface()")
 
 
 def restore_source():
@@ -66,7 +80,10 @@ def test_acquisition_verifies_freeze_before_adapter_start_and_ready():
     gate = text.index("exclusive Stanford ownership gate established")
     adapter_start = text.index('"$ADAPTER"', gate)
     health = text.index("require_healthy_adapter", adapter_start)
-    node = text.index("adapter_node_subscribes_to_cmd_vel", health)
+    node = text.index(
+        "adapter_node_matches_pid_and_subscribes_to_cmd_vel",
+        health,
+    )
     ready = text.index("systemd-notify", node)
 
     assert frozen_champ < frozen_servo < gate < adapter_start
@@ -78,7 +95,7 @@ def test_readiness_is_exact_adapter_node_not_global_subscription_count():
 
     assert "ros2 topic info" not in text
     assert "Subscription count:" not in text
-    assert "adapter_node_subscribes_to_cmd_vel" in text
+    assert "adapter_node_matches_pid_and_subscribes_to_cmd_vel" in text
     assert "ros2 node list" in text
     assert "grep -Fx '/stanford_cmd_vel'" in text
     assert "multiple /stanford_cmd_vel nodes found" in text
@@ -92,7 +109,7 @@ def test_readiness_rejects_zombie_or_changed_adapter_before_active_notify():
 
     health = text.index("require_healthy_adapter()")
     assert '"/proc/$ADAPTER_PID/cmdline"' in text[health:]
-    assert 'Z \\(zombie\\)' in text[health:]
+    assert "State:[[:space:]]+[XZx]" in text[health:]
     assert "$ADAPTER_PATTERN" in text[health:]
 
     final_health = text.rindex("require_healthy_adapter")
@@ -100,6 +117,18 @@ def test_readiness_rejects_zombie_or_changed_adapter_before_active_notify():
     notify = text.index("systemd-notify")
 
     assert final_health < active < notify
+
+
+def test_adapter_process_pid_is_bound_to_owner_pid_before_ready():
+    text = source()
+
+    assert "ros2 param get" in text
+    assert "/stanford_cmd_vel process_pid" in text
+    assert '"$node_pid" = "$ADAPTER_PID"' in text
+    assert "timeout 2 ros2 node list" in text
+    assert "timeout 2 ros2 node info" in text
+    assert "timeout 2 ros2 param get" in text
+    assert "READINESS_DEADLINE" in text
 
 
 def test_restore_preserves_zero_adapter_stop_and_normal_writer_order():

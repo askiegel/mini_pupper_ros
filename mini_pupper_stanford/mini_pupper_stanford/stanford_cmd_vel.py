@@ -60,6 +60,11 @@ class StanfordCmdVel(Node):
         )
 
         self.declare_parameter(
+            "process_pid",
+            os.getpid(),
+        )
+
+        self.declare_parameter(
             "dry_run",
             True,
         )

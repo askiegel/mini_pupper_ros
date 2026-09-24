@@ -162,19 +162,21 @@ require_healthy_adapter()
 
     state="$(process_state "$ADAPTER_PID" 2>/dev/null || true)"
 
-    printf '%s\n' "$state" | grep -Eq 'Z \(zombie\)' \
+    printf '%s\n' "$state" | grep -Eq \
+        'State:[[:space:]]+[XZx]' \
         && return 1
 
     return 0
 }
 
 
-adapter_node_subscribes_to_cmd_vel()
+adapter_node_matches_pid_and_subscribes_to_cmd_vel()
 {
     local node_count
+    local node_pid
 
     node_count="$(
-        ros2 node list 2>/dev/null \
+        timeout 2 ros2 node list 2>/dev/null \
         | grep -Fx '/stanford_cmd_vel' \
         | wc -l
     )"
@@ -186,14 +188,24 @@ adapter_node_subscribes_to_cmd_vel()
     [ "$node_count" -eq 1 ] \
         || return 1
 
-    ros2 node info /stanford_cmd_vel 2>/dev/null \
+    timeout 2 ros2 node info /stanford_cmd_vel 2>/dev/null \
         | awk '
             $1 == "/cmd_vel:" \
                 && $2 == "geometry_msgs/msg/Twist" {
                 found = 1
             }
             END { exit !found }
-        '
+        ' \
+        || return 1
+
+    node_pid="$(
+        timeout 2 ros2 param get \
+            /stanford_cmd_vel process_pid 2>/dev/null \
+        | sed -n \
+            's/^Integer value is: \([0-9][0-9]*\)$/\1/p'
+    )"
+
+    [ "$node_pid" = "$ADAPTER_PID" ]
 }
 
 
@@ -587,8 +599,9 @@ log "dry_run=$ADAPTER_DRY_RUN"
 #
 
 READY=0
+READINESS_DEADLINE=$((SECONDS + 6))
 
-for _ in $(seq 1 60)
+while [ "$SECONDS" -lt "$READINESS_DEADLINE" ]
 do
 
     #
@@ -610,7 +623,7 @@ do
     fi
 
 
-    if adapter_node_subscribes_to_cmd_vel; then
+    if adapter_node_matches_pid_and_subscribes_to_cmd_vel; then
 
         READY=1
         break
