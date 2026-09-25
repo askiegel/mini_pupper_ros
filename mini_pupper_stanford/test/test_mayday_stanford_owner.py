@@ -171,3 +171,9 @@ def test_cleanup_and_systemd_notify_guards_remain():
     assert text.index("exclusive Stanford ownership gate established") < text.index(
         "systemd-notify"
     )
+
+
+def test_internal_stanford_handoff_uses_non_cancelling_safety_zero():
+    text = source()
+    assert '"$ROBOT_BRIDGE_URL/safety-zero"' in text
+    assert '"$ROBOT_BRIDGE_URL/stop"' not in text
